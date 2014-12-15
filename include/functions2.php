@@ -2028,7 +2028,8 @@
 			return $rel_url;
 		} else if (strpos($rel_url, "//") === 0) {
 			# protocol-relative URL (rare but they exist)
-			return $rel_url;
+			$parts = parse_url($url);
+			return $parts['scheme'] . '://' . substr($rel_url, 2);
 		} else if (strpos($rel_url, "/") === 0)
 		{
 			$parts = parse_url($url);
