@@ -725,6 +725,8 @@
 
 				_debug("article hash: $entry_current_hash [stored=$entry_stored_hash]", $debug_enabled);
 
+				$content_hash_changed = true;
+				
 				if ($entry_current_hash == $entry_stored_hash && !isset($_REQUEST["force_rehash"])) {
 					_debug("stored article seems up to date [IID: $base_entry_id], updating timestamp only", $debug_enabled);
 
@@ -737,6 +739,8 @@
 
 					db_query("UPDATE ttrss_entries SET date_updated = NOW()
 						WHERE id = '$base_entry_id'");
+					
+					$content_hash_changed = false;
 
                     // if we allow duplicate posts, we have to continue to
                     // create the user entries for this feed
@@ -1042,7 +1046,7 @@
 					db_query("UPDATE ttrss_user_entries
 							SET score = '$score' WHERE ref_id = '$ref_id'");
 
-					if ($mark_unread_on_update) {
+					if ($content_hash_changed && $mark_unread_on_update) {
 						db_query("UPDATE ttrss_user_entries
 							SET last_read = null, unread = true WHERE ref_id = '$ref_id'");
 					}
