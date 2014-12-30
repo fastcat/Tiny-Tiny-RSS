@@ -936,11 +936,14 @@
 //					if ($_REQUEST["xdebug"]) print "$query\n";
 
 					$result = db_query($query);
+					
+					$new_user_record = false;
 
 					// okay it doesn't exist - create user entry
 					if (db_num_rows($result) == 0) {
 
 						_debug("user record not found, creating...", $debug_enabled);
+						$new_user_record = true;
 
 						if ($score >= -500 && !find_article_filter($article_filters, 'catchup') && !$entry_force_catchup) {
 							$unread = 'true';
@@ -1046,7 +1049,8 @@
 					db_query("UPDATE ttrss_user_entries
 							SET score = '$score' WHERE ref_id = '$ref_id'");
 
-					if ($content_hash_changed && $mark_unread_on_update) {
+					// not an update if it's new or if the hash didn't change
+					if (!$new_user_record && $content_hash_changed && $mark_unread_on_update) {
 						db_query("UPDATE ttrss_user_entries
 							SET last_read = null, unread = true WHERE ref_id = '$ref_id'");
 					}
