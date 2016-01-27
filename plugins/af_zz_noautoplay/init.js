@@ -11,9 +11,9 @@ dojo.addOnLoad(function() {
 
 				videos[i].removeAttribute("autoplay");
 				videos[i].pause();
-				videos[i].onclick = function() {
-					this.paused ? this.play() : this.pause();
-				}
+				//videos[i].onclick = function() {
+				//	this.paused ? this.play() : this.pause();
+				//}
 			}
 		}
 
@@ -27,9 +27,9 @@ dojo.addOnLoad(function() {
 			for (i = 0; i < videos.length; i++) {
 				videos[i].removeAttribute("autoplay");
 				videos[i].pause();
-				videos[i].onclick = function() {
-					this.paused ? this.play() : this.pause();
-				}
+				//videos[i].onclick = function() {
+				//	this.paused ? this.play() : this.pause();
+				//}
 			}
 
 		}
