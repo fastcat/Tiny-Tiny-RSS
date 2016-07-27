@@ -111,7 +111,7 @@ class Af_RedditImgur extends Plugin {
 						if (@$tmpdoc->loadHTML($tmp)) {
 							$tmpxpath = new DOMXPath($tmpdoc);
 
-							$source_meta = $tmpxpath->query("//meta[@name='og:video' and contains(@content, '.mp4')]")->item(0);
+							$source_meta = $tmpxpath->query("//meta[@property='og:video' and contains(@content, '.mp4')]")->item(0);
 							$poster_meta = $tmpxpath->query("//meta[@property='og:image' and contains(@content,'thumbs.gfycat.com')]")->item(0);
 
 							if ($source_meta) {
