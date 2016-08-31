@@ -64,8 +64,6 @@
 				"toggle_publ" => __("Toggle published"),
 				"toggle_unread" => __("Toggle unread"),
 				"edit_tags" => __("Edit tags"),
-				"dismiss_selected" => __("Dismiss selected"),
-				"dismiss_read" => __("Dismiss read"),
 				"open_in_new_window" => __("Open in new window"),
 				"catchup_below" => __("Mark below as read"),
 				"catchup_above" => __("Mark above as read"),
@@ -91,6 +89,7 @@
 				"feed_edit" => __("Edit feed"),
 				"feed_catchup" => __("Mark as read"),
 				"feed_reverse" => __("Reverse headlines"),
+				"feed_toggle_vgroup" => __("Toggle headline grouping"),
 				"feed_debug_update" => __("Debug feed update"),
 				"feed_debug_viewfeed" => __("Debug viewfeed()"),
 				"catchup_all" => __("Mark all feeds as read"),
@@ -135,8 +134,6 @@
 				"*s" => "toggle_publ",
 				"u" => "toggle_unread",
 				"*t" => "edit_tags",
-				"*d" => "dismiss_selected",
-				"*x" => "dismiss_read",
 				"o" => "open_in_new_window",
 				"c p" => "catchup_below",
 				"c n" => "catchup_above",
@@ -162,6 +159,7 @@
 				"f e" => "feed_edit",
 				"f q" => "feed_catchup",
 				"f x" => "feed_reverse",
+				"f g" => "feed_toggle_vgroup",
 				"f *d" => "feed_debug_update",
 				"f *g" => "feed_debug_viewfeed",
 				"f *c" => "toggle_combined_mode",
@@ -207,7 +205,7 @@
 
 	function check_for_update() {
 		if (defined("GIT_VERSION_TIMESTAMP")) {
-			$content = @fetch_file_contents("http://tt-rss.org/version.json");
+			$content = @fetch_file_contents(array("url" => "http://tt-rss.org/version.json", "timeout" => 5));
 
 			if ($content) {
 				$content = json_decode($content, true);
@@ -225,7 +223,7 @@
 		return "";
 	}
 
-	function make_runtime_info() {
+	function make_runtime_info($disable_update_check = false) {
 		$data = array();
 
 		$result = db_query("SELECT MAX(id) AS mid, COUNT(*) AS nf FROM
@@ -244,7 +242,7 @@
 		$data['reload_on_ts_change'] = !defined('_NO_RELOAD_ON_TS_CHANGE');
 
 
-		if (CHECK_FOR_UPDATES && $_SESSION["last_version_check"] + 86400 + rand(-1000, 1000) < time()) {
+		if (CHECK_FOR_UPDATES && !$disable_update_check && $_SESSION["last_version_check"] + 86400 + rand(-1000, 1000) < time()) {
 			$update_result = @check_for_update();
 
 			$data["update_result"] = $update_result;
@@ -892,6 +890,8 @@
 
 		$entries = $xpath->query('(//a[@href]|//img[@src])');
 
+		$ttrss_uses_https = parse_url(get_self_url_prefix(), PHP_URL_SCHEME) === 'https';
+
 		foreach ($entries as $entry) {
 
 			if ($site_url) {
@@ -910,12 +910,35 @@
 
 					if (file_exists($cached_filename)) {
 						$src = SELF_URL_PATH . '/public.php?op=cached_image&hash=' . sha1($src);
+
+						if ($entry->hasAttribute('srcset')) {
+							$entry->removeAttribute('srcset');
+						}
+
+						if ($entry->hasAttribute('sizes')) {
+							$entry->removeAttribute('sizes');
+						}
 					}
 
 					$entry->setAttribute('src', $src);
 				}
 
 				if ($entry->nodeName == 'img') {
+					if ($entry->hasAttribute('src')) {
+						$is_https_url = parse_url($entry->getAttribute('src'), PHP_URL_SCHEME) === 'https';
+
+						if ($ttrss_uses_https && !$is_https_url) {
+
+							if ($entry->hasAttribute('srcset')) {
+								$entry->removeAttribute('srcset');
+							}
+
+							if ($entry->hasAttribute('sizes')) {
+								$entry->removeAttribute('sizes');
+							}
+						}
+					}
+
 					if (($owner && get_pref("STRIP_IMAGES", $owner)) ||
 							$force_remove_images || $_SESSION["bw_limit"]) {
 
@@ -955,14 +978,14 @@
 		$allowed_elements = array('a', 'address', 'audio', 'article', 'aside',
 			'b', 'bdi', 'bdo', 'big', 'blockquote', 'body', 'br',
 			'caption', 'cite', 'center', 'code', 'col', 'colgroup',
-			'data', 'dd', 'del', 'details', 'div', 'dl', 'font',
+			'data', 'dd', 'del', 'details', 'description', 'div', 'dl', 'font',
 			'dt', 'em', 'footer', 'figure', 'figcaption',
 			'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'html', 'i',
 			'img', 'ins', 'kbd', 'li', 'main', 'mark', 'nav', 'noscript',
 			'ol', 'p', 'pre', 'q', 'ruby', 'rp', 'rt', 's', 'samp', 'section',
 			'small', 'source', 'span', 'strike', 'strong', 'sub', 'summary',
 			'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'time',
-			'tr', 'track', 'tt', 'u', 'ul', 'var', 'wbr', 'video' );
+			'tr', 'track', 'tt', 'u', 'ul', 'var', 'wbr', 'video', 'xml:namespace' );
 
 		if ($_SESSION['hasSandbox']) $allowed_elements[] = 'iframe';
 
@@ -1013,7 +1036,14 @@
 
 		$res = $doc->saveHTML();
 
-		return $res;
+		/* strip everything outside of <body>...</body> */
+
+		$res_frag = array();
+		if (preg_match('/<body>(.*)<\/body>/is', $res, $res_frag)) {
+			return $res_frag[1];
+		} else {
+			return $res;
+		}
 	}
 
 	function strip_harmful_tags($doc, $allowed_elements, $disallowed_attributes) {
@@ -1031,6 +1061,10 @@
 				foreach ($entry->attributes as $attr) {
 
 					if (strpos($attr->nodeName, 'on') === 0) {
+						array_push($attrs_to_remove, $attr);
+					}
+
+					if ($attr->nodeName == 'href' && stripos($attr->value, 'javascript:') === 0) {
 						array_push($attrs_to_remove, $attr);
 					}
 
@@ -1104,7 +1138,8 @@
 			$result = db_query("SELECT tag_cache FROM ttrss_user_entries
 				WHERE ref_id = '$id' AND owner_uid = $owner_uid");
 
-			$tag_cache = db_fetch_result($result, 0, "tag_cache");
+			if (db_num_rows($result) != 0)
+				$tag_cache = db_fetch_result($result, 0, "tag_cache");
 		}
 
 		if ($tag_cache) {
@@ -1139,7 +1174,7 @@
 
 	function tag_is_valid($tag) {
 		if ($tag == '') return false;
-		if (preg_match("/^[0-9]*$/", $tag)) return false;
+		if (is_numeric($tag)) return false;
 		if (mb_strlen($tag) > 250) return false;
 
 		if (!$tag) return false;
@@ -1392,7 +1427,7 @@
 			if ($line["orig_feed_id"]) {
 
 				$tmp_result = db_query("SELECT * FROM ttrss_archived_feeds
-					WHERE id = ".$line["orig_feed_id"]);
+					WHERE id = ".$line["orig_feed_id"] . " AND owner_uid = " . $_SESSION["uid"]);
 
 				if (db_num_rows($tmp_result) != 0) {
 
@@ -2022,16 +2057,16 @@
 	 * @return string Absolute URL
 	 */
 	function rewrite_relative_url($url, $rel_url) {
-		if (strpos($rel_url, ":") !== false) {
-			return $rel_url;
-		} else if (strpos($rel_url, "://") !== false) {
+		if (strpos($rel_url, "://") !== false) {
 			return $rel_url;
 		} else if (strpos($rel_url, "//") === 0) {
 			# protocol-relative URL (rare but they exist)
 			$parts = parse_url($url);
 			return $parts['scheme'] . '://' . substr($rel_url, 2);
-		} else if (strpos($rel_url, "/") === 0)
-		{
+		} else if (preg_match("/^[a-z]+:/i", $rel_url)) {
+			# magnet:, feed:, etc
+			return $rel_url;
+		} else if (strpos($rel_url, "/") === 0) {
 			$parts = parse_url($url);
 			$parts['path'] = $rel_url;
 
@@ -2414,5 +2449,21 @@
 		if (strlen($tmp) > 0 && substr($tmp, 0, 1) == "/") $tmp = substr($tmp, 1);
 
 		return $tmp;
+	}
+
+	function get_upload_error_message($code) {
+
+		$errors = array(
+			0 => __('There is no error, the file uploaded with success'),
+			1 => __('The uploaded file exceeds the upload_max_filesize directive in php.ini'),
+			2 => __('The uploaded file exceeds the MAX_FILE_SIZE directive that was specified in the HTML form'),
+			3 => __('The uploaded file was only partially uploaded'),
+			4 => __('No file was uploaded'),
+			6 => __('Missing a temporary folder'),
+			7 => __('Failed to write file to disk.'),
+			8 => __('A PHP extension stopped the file upload.'),
+		);
+
+		return $errors[$code];
 	}
 ?>
