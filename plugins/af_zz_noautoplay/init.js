@@ -11,6 +11,7 @@ require(['dojo/_base/kernel', 'dojo/ready'], function  (dojo, ready) {
 				for (i = 0; i < videos.length; i++) {
 
 					videos[i].removeAttribute("autoplay");
+					videos[i].removeAttribute("loop");
 					videos[i].pause();
 					//videos[i].onclick = function() {
 					//	this.paused ? this.play() : this.pause();
@@ -27,6 +28,7 @@ require(['dojo/_base/kernel', 'dojo/ready'], function  (dojo, ready) {
 
 				for (i = 0; i < videos.length; i++) {
 					videos[i].removeAttribute("autoplay");
+					videos[i].removeAttribute("loop");
 					videos[i].pause();
 					//videos[i].onclick = function() {
 					//	this.paused ? this.play() : this.pause();
