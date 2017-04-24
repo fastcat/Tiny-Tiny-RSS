@@ -68,7 +68,7 @@
 		if ($theme && theme_valid("$theme")) {
 			echo stylesheet_tag(get_theme_path($theme));
 		} else {
-			echo stylesheet_tag("themes/default.css");
+			echo stylesheet_tag("themes/default.php");
 		}
 	}
 	?>
@@ -91,6 +91,7 @@
 	<script>
 		dojoConfig = {
 			async: true,
+			cacheBust: new Date(),
 			packages: [
 				{ name: "fox", location: "../../js" },
 			]
@@ -171,16 +172,17 @@
 <div id="toolbar" dojoType="dijit.layout.ContentPane" region="top">
 	<div id="main-toolbar" dojoType="dijit.Toolbar">
 
+		<?php
+		foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_MAIN_TOOLBAR_BUTTON) as $p) {
+			echo $p->hook_main_toolbar_button();
+		}
+		?>
+
 		<form id="headlines-toolbar" action="" onsubmit='return false'>
 
 		</form>
 
 		<form id="main_toolbar_form" action="" onsubmit='return false'>
-
-		<button dojoType="dijit.form.Button" id="collapse_feeds_btn"
-			onclick="collapse_feedlist()"
-			title="<?php echo __('Collapse feedlist') ?>" style="display : none">
-			&lt;&lt;</button>
 
 		<select name="view_mode" title="<?php echo __('Show articles') ?>"
 			onchange="viewModeChanged()"
@@ -230,8 +232,7 @@
 
 			<button id="net-alert" dojoType="dijit.form.Button" style="display : none" disabled="true"
 				title="<?php echo __("Communication problem with server.") ?>">
-			<img
-				src="images/error.png" />
+				<img src="images/error.png" />
 			</button>
 
 			<div dojoType="dijit.form.DropDownButton">

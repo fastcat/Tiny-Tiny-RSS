@@ -128,12 +128,6 @@
 
 		$finished = false;
 
-		if (function_exists("mcrypt_decrypt")) {
-			$crypt_key = make_password(24);
-		} else {
-			$crypt_key = "";
-		}
-
 		foreach ($data as $line) {
 			if (preg_match("/define\('DB_TYPE'/", $line)) {
 				$rv .= "\tdefine('DB_TYPE', '$DB_TYPE');\n";
@@ -149,8 +143,6 @@
 				$rv .= "\tdefine('DB_PORT', '$DB_PORT');\n";
 			} else if (preg_match("/define\('SELF_URL_PATH'/", $line)) {
 				$rv .= "\tdefine('SELF_URL_PATH', '$SELF_URL_PATH');\n";
-			} else if (preg_match("/define\('FEED_CRYPT_KEY'/", $line)) {
-				$rv .= "\tdefine('FEED_CRYPT_KEY', '$crypt_key');\n";
 			} else if (!$finished) {
 				$rv .= "$line\n";
 			}
@@ -315,6 +307,10 @@
 
 		if (function_exists("curl_init") && ini_get("open_basedir")) {
 			array_push($notices, "CURL and open_basedir combination breaks support for HTTP redirects. See the FAQ for more information.");
+		}
+
+		if (!function_exists("idn_to_ascii")) {
+			array_push($notices, "PHP support for Internationalization Functions is required to handle Internationalized Domain Names.");
 		}
 
 		if (count($notices) > 0) {

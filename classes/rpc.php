@@ -281,7 +281,7 @@ class RPC extends Handler_Protected {
 				"/public.php?op=rss&id=-2&key=" .
 				get_feed_access_key(-2, false);
 
-			$p = new Publisher(PUBSUBHUBBUB_HUB);
+			$p = new pubsubhubbub\publisher\Publisher(PUBSUBHUBBUB_HUB);
 
 			$pubsub_result = $p->publish_update($rss_link);
 		}
@@ -450,8 +450,10 @@ class RPC extends Handler_Protected {
 		$feed_id = $this->dbh->escape_string($_REQUEST['feed_id']);
 		$is_cat = $this->dbh->escape_string($_REQUEST['is_cat']) == "true";
 		$mode = $this->dbh->escape_string($_REQUEST['mode']);
+		$search_query = $this->dbh->escape_string($_REQUEST['search_query']);
+		$search_lang = $this->dbh->escape_string($_REQUEST['search_lang']);
 
-		catchup_feed($feed_id, $is_cat, false, false, $mode);
+		catchup_feed($feed_id, $is_cat, false, false, $mode, [$search_query, $search_lang]);
 
 		print json_encode(array("message" => "UPDATE_COUNTERS"));
 	}
@@ -624,7 +626,7 @@ class RPC extends Handler_Protected {
 				"/public.php?op=rss&id=-2&key=" .
 				get_feed_access_key(-2, false);
 
-			$p = new Publisher(PUBSUBHUBBUB_HUB);
+			$p = new pubsubhubbub\publisher\Publisher(PUBSUBHUBBUB_HUB);
 
 			/* $pubsub_result = */ $p->publish_update($rss_link);
 		}
@@ -647,14 +649,19 @@ class RPC extends Handler_Protected {
 	}
 
 	function log() {
-		$logmsg = $this->dbh->escape_string($_REQUEST['logmsg']);
+		$msg = $this->dbh->escape_string($_REQUEST['msg']);
+		$file = $this->dbh->escape_string(basename($_REQUEST['file']));
+		$line = (int) $_REQUEST['line'];
+		$context = $this->dbh->escape_string($_REQUEST['context']);
 
-		if ($logmsg) {
+		if ($msg) {
 			Logger::get()->log_error(E_USER_WARNING,
-				$logmsg, '[client-js]', 0, false);
-		}
+				$msg, 'client-js:' . $file, $line, $context);
 
-		echo json_encode(array("message" => "HOST_ERROR_LOGGED"));
+			echo json_encode(array("message" => "HOST_ERROR_LOGGED"));
+		} else {
+			echo json_encode(array("error" => "MESSAGE_NOT_FOUND"));
+		}
 
 	}
 }

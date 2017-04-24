@@ -140,7 +140,7 @@
 	define('SELF_USER_AGENT', 'Tiny Tiny RSS/' . VERSION . ' (http://tt-rss.org/)');
 	ini_set('user_agent', SELF_USER_AGENT);
 
-	require_once 'lib/pubsubhubbub/publisher.php';
+	require_once 'lib/pubsubhubbub/Publisher.php';
 
 	$schema_version = false;
 
@@ -345,10 +345,25 @@
 		global $fetch_last_content_type;
 		global $fetch_curl_used;
 
+		$fetch_last_error = false;
+		$fetch_last_error_code = -1;
+		$fetch_last_error_content = "";
+		$fetch_last_content_type = "";
+		$fetch_curl_used = false;
+
 		if (!is_array($options)) {
 
 			// falling back on compatibility shim
-			$options = array(
+			$option_names = [ "url", "type", "login", "pass", "post_query", "timeout", "timestamp", "useragent" ];
+			$tmp = [];
+
+			for ($i = 0; $i < func_num_args(); $i++) {
+				$tmp[$option_names[$i]] = func_get_arg($i);
+			}
+
+			$options = $tmp;
+
+			/*$options = array(
 					"url" => func_get_arg(0),
 					"type" => @func_get_arg(1),
 					"login" => @func_get_arg(2),
@@ -357,7 +372,7 @@
 					"timeout" => @func_get_arg(5),
 					"timestamp" => @func_get_arg(6),
 					"useragent" => @func_get_arg(7)
-			);
+			); */
 		}
 
 		$url = $options["url"];
@@ -368,6 +383,7 @@
 		$timeout = isset($options["timeout"]) ? $options["timeout"] : false;
 		$timestamp = isset($options["timestamp"]) ? $options["timestamp"] : 0;
 		$useragent = isset($options["useragent"]) ? $options["useragent"] : false;
+		$followlocation = isset($options["followlocation"]) ? $options["followlocation"] : true;
 
 		$url = ltrim($url, ' ');
 		$url = str_replace(' ', '%20', $url);
@@ -388,7 +404,7 @@
 
 			curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $timeout ? $timeout : FILE_FETCH_CONNECT_TIMEOUT);
 			curl_setopt($ch, CURLOPT_TIMEOUT, $timeout ? $timeout : FILE_FETCH_TIMEOUT);
-			curl_setopt($ch, CURLOPT_FOLLOWLOCATION, !ini_get("open_basedir"));
+			curl_setopt($ch, CURLOPT_FOLLOWLOCATION, !ini_get("open_basedir") && $followlocation);
 			curl_setopt($ch, CURLOPT_MAXREDIRS, 20);
 			curl_setopt($ch, CURLOPT_BINARYTRANSFER, true);
 			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -462,10 +478,14 @@
 				}
 			}
 
+			// TODO: should this support POST requests or not? idk
+
 			if (!$post_query && $timestamp) {
 				 $context = stream_context_create(array(
 					  'http' => array(
 							'method' => 'GET',
+						    'ignore_errors' => true,
+						    'timeout' => $timeout ? $timeout : FILE_FETCH_TIMEOUT,
 							'protocol_version'=> 1.1,
 							'header' => "If-Modified-Since: ".gmdate("D, d M Y H:i:s \\G\\M\\T\r\n", $timestamp)
 					  )));
@@ -473,6 +493,8 @@
 				 $context = stream_context_create(array(
 					  'http' => array(
 							'method' => 'GET',
+						    'ignore_errors' => true,
+						    'timeout' => $timeout ? $timeout : FILE_FETCH_TIMEOUT,
 							'protocol_version'=> 1.1
 					  )));
 			}
@@ -481,7 +503,6 @@
 
 			$data = @file_get_contents($url, false, $context);
 
-			$fetch_last_content_type = false;  // reset if no type was sent from server
 			if (isset($http_response_header) && is_array($http_response_header)) {
 				foreach ($http_response_header as $h) {
 					if (substr(strtolower($h), 0, 13) == 'content-type:') {
@@ -496,7 +517,7 @@
 				}
 			}
 
-			if (!$data) {
+			if ($fetch_last_error_code != 200) {
 				$error = error_get_last();
 
 				if ($error['message'] != $old_error['message']) {
@@ -504,6 +525,10 @@
 				} else {
 					$fetch_last_error = "HTTP Code: $fetch_last_error_code";
 				}
+
+				$fetch_last_error_content = $data;
+
+				return false;
 			}
 			return $data;
 		}
@@ -636,6 +661,21 @@
 		}
 
 		print "</select>";
+	}
+
+	function print_hidden($name, $value) {
+		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"$name\" value=\"$value\">";
+	}
+
+	function print_checkbox($id, $checked, $value = "", $attributes = "") {
+		$checked_str = $checked ? "checked" : "";
+		$value_str = $value ? "value=\"$value\"" : "";
+
+		print "<input dojoType=\"dijit.form.CheckBox\" id=\"$id\" $value_str $checked_str $attributes name=\"$id\">";
+	}
+
+	function print_button($type, $value, $attributes = "") {
+		print "<p><button dojoType=\"dijit.form.Button\" $attributes type=\"$type\">$value</button>";
 	}
 
 	function print_radio($id, $default, $true_is, $values, $attributes = "") {
@@ -1123,149 +1163,148 @@
 		}
 	}
 
-	function catchup_feed($feed, $cat_view, $owner_uid = false, $max_id = false, $mode = 'all') {
+	function catchup_feed($feed, $cat_view, $owner_uid = false, $max_id = false, $mode = 'all', $search = false) {
 
-			if (!$owner_uid) $owner_uid = $_SESSION['uid'];
+		if (!$owner_uid) $owner_uid = $_SESSION['uid'];
 
-			//if (preg_match("/^-?[0-9][0-9]*$/", $feed) != false) {
+		// Todo: all this interval stuff needs some generic generator function
 
-			// Todo: all this interval stuff needs some generic generator function
+		$date_qpart = "false";
+		$search_qpart = is_array($search) && $search[0] ? search_to_sql($search[0], $search[1])[0] : 'true';
 
-			$date_qpart = "false";
-
-			switch ($mode) {
-			case "1day":
-				if (DB_TYPE == "pgsql") {
-					$date_qpart = "date_entered < NOW() - INTERVAL '1 day' ";
-				} else {
-					$date_qpart = "date_entered < DATE_SUB(NOW(), INTERVAL 1 DAY) ";
-				}
-				break;
-			case "1week":
-				if (DB_TYPE == "pgsql") {
-					$date_qpart = "date_entered < NOW() - INTERVAL '1 week' ";
-				} else {
-					$date_qpart = "date_entered < DATE_SUB(NOW(), INTERVAL 1 WEEK) ";
-				}
-				break;
-			case "2week":
-				if (DB_TYPE == "pgsql") {
-					$date_qpart = "date_entered < NOW() - INTERVAL '2 week' ";
-				} else {
-					$date_qpart = "date_entered < DATE_SUB(NOW(), INTERVAL 2 WEEK) ";
-				}
-				break;
-			default:
-				$date_qpart = "true";
+		switch ($mode) {
+		case "1day":
+			if (DB_TYPE == "pgsql") {
+				$date_qpart = "date_entered < NOW() - INTERVAL '1 day' ";
+			} else {
+				$date_qpart = "date_entered < DATE_SUB(NOW(), INTERVAL 1 DAY) ";
 			}
+			break;
+		case "1week":
+			if (DB_TYPE == "pgsql") {
+				$date_qpart = "date_entered < NOW() - INTERVAL '1 week' ";
+			} else {
+				$date_qpart = "date_entered < DATE_SUB(NOW(), INTERVAL 1 WEEK) ";
+			}
+			break;
+		case "2week":
+			if (DB_TYPE == "pgsql") {
+				$date_qpart = "date_entered < NOW() - INTERVAL '2 week' ";
+			} else {
+				$date_qpart = "date_entered < DATE_SUB(NOW(), INTERVAL 2 WEEK) ";
+			}
+			break;
+		default:
+			$date_qpart = "true";
+		}
 
-			if (is_numeric($feed)) {
-				if ($cat_view) {
+		if (is_numeric($feed)) {
+			if ($cat_view) {
 
-					if ($feed >= 0) {
+				if ($feed >= 0) {
 
-						if ($feed > 0) {
-							$children = getChildCategories($feed, $owner_uid);
-							array_push($children, $feed);
+					if ($feed > 0) {
+						$children = getChildCategories($feed, $owner_uid);
+						array_push($children, $feed);
 
-							$children = join(",", $children);
+						$children = join(",", $children);
 
-							$cat_qpart = "cat_id IN ($children)";
-						} else {
-							$cat_qpart = "cat_id IS NULL";
-						}
-
-						db_query("UPDATE ttrss_user_entries
-							SET unread = false, last_read = NOW() WHERE ref_id IN
-								(SELECT id FROM
-									(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
-										AND owner_uid = $owner_uid AND unread = true AND feed_id IN
-											(SELECT id FROM ttrss_feeds WHERE $cat_qpart) AND $date_qpart) as tmp)");
-
-					} else if ($feed == -2) {
-
-						db_query("UPDATE ttrss_user_entries
-							SET unread = false,last_read = NOW() WHERE (SELECT COUNT(*)
-								FROM ttrss_user_labels2, ttrss_entries WHERE article_id = ref_id AND id = ref_id AND $date_qpart) > 0
-								AND unread = true AND owner_uid = $owner_uid");
+						$cat_qpart = "cat_id IN ($children)";
+					} else {
+						$cat_qpart = "cat_id IS NULL";
 					}
-
-				} else if ($feed > 0) {
 
 					db_query("UPDATE ttrss_user_entries
 						SET unread = false, last_read = NOW() WHERE ref_id IN
 							(SELECT id FROM
 								(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
-									AND owner_uid = $owner_uid AND unread = true AND feed_id = $feed AND $date_qpart) as tmp)");
+									AND owner_uid = $owner_uid AND unread = true AND feed_id IN
+										(SELECT id FROM ttrss_feeds WHERE $cat_qpart) AND $date_qpart AND $search_qpart) as tmp)");
 
-				} else if ($feed < 0 && $feed > LABEL_BASE_INDEX) { // special, like starred
+				} else if ($feed == -2) {
 
-					if ($feed == -1) {
-						db_query("UPDATE ttrss_user_entries
-							SET unread = false, last_read = NOW() WHERE ref_id IN
-								(SELECT id FROM
-									(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
-										AND owner_uid = $owner_uid AND unread = true AND marked = true AND $date_qpart) as tmp)");
+					db_query("UPDATE ttrss_user_entries
+						SET unread = false,last_read = NOW() WHERE (SELECT COUNT(*)
+							FROM ttrss_user_labels2, ttrss_entries WHERE article_id = ref_id AND id = ref_id AND $date_qpart AND $search_qpart) > 0
+							AND unread = true AND owner_uid = $owner_uid");
+				}
+
+			} else if ($feed > 0) {
+
+				db_query("UPDATE ttrss_user_entries
+					SET unread = false, last_read = NOW() WHERE ref_id IN
+						(SELECT id FROM
+							(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
+								AND owner_uid = $owner_uid AND unread = true AND feed_id = $feed AND $date_qpart AND $search_qpart) as tmp)");
+
+			} else if ($feed < 0 && $feed > LABEL_BASE_INDEX) { // special, like starred
+
+				if ($feed == -1) {
+					db_query("UPDATE ttrss_user_entries
+						SET unread = false, last_read = NOW() WHERE ref_id IN
+							(SELECT id FROM
+								(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
+									AND owner_uid = $owner_uid AND unread = true AND marked = true AND $date_qpart AND $search_qpart) as tmp)");
+				}
+
+				if ($feed == -2) {
+					db_query("UPDATE ttrss_user_entries
+						SET unread = false, last_read = NOW() WHERE ref_id IN
+							(SELECT id FROM
+								(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
+									AND owner_uid = $owner_uid AND unread = true AND published = true AND $date_qpart AND $search_qpart) as tmp)");
+				}
+
+				if ($feed == -3) {
+
+					$intl = get_pref("FRESH_ARTICLE_MAX_AGE");
+
+					if (DB_TYPE == "pgsql") {
+						$match_part = "date_entered > NOW() - INTERVAL '$intl hour' ";
+					} else {
+						$match_part = "date_entered > DATE_SUB(NOW(),
+							INTERVAL $intl HOUR) ";
 					}
-
-					if ($feed == -2) {
-						db_query("UPDATE ttrss_user_entries
-							SET unread = false, last_read = NOW() WHERE ref_id IN
-								(SELECT id FROM
-									(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
-										AND owner_uid = $owner_uid AND unread = true AND published = true AND $date_qpart) as tmp)");
-					}
-
-					if ($feed == -3) {
-
-						$intl = get_pref("FRESH_ARTICLE_MAX_AGE");
-
-						if (DB_TYPE == "pgsql") {
-							$match_part = "date_entered > NOW() - INTERVAL '$intl hour' ";
-						} else {
-							$match_part = "date_entered > DATE_SUB(NOW(),
-								INTERVAL $intl HOUR) ";
-						}
-
-						db_query("UPDATE ttrss_user_entries
-							SET unread = false, last_read = NOW() WHERE ref_id IN
-								(SELECT id FROM
-									(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
-										AND owner_uid = $owner_uid AND score >= 0 AND unread = true AND $date_qpart AND $match_part) as tmp)");
-					}
-
-					if ($feed == -4) {
-						db_query("UPDATE ttrss_user_entries
-							SET unread = false, last_read = NOW() WHERE ref_id IN
-								(SELECT id FROM
-									(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
-										AND owner_uid = $owner_uid AND unread = true AND $date_qpart) as tmp)");
-					}
-
-				} else if ($feed < LABEL_BASE_INDEX) { // label
-
-					$label_id = feed_to_label_id($feed);
 
 					db_query("UPDATE ttrss_user_entries
 						SET unread = false, last_read = NOW() WHERE ref_id IN
 							(SELECT id FROM
-								(SELECT DISTINCT ttrss_entries.id FROM ttrss_entries, ttrss_user_entries, ttrss_user_labels2 WHERE ref_id = id
-									AND label_id = '$label_id' AND ref_id = article_id
-									AND owner_uid = $owner_uid AND unread = true AND $date_qpart) as tmp)");
-
+								(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
+									AND owner_uid = $owner_uid AND score >= 0 AND unread = true AND $date_qpart AND $match_part AND $search_qpart) as tmp)");
 				}
 
-				ccache_update($feed, $owner_uid, $cat_view);
+				if ($feed == -4) {
+					db_query("UPDATE ttrss_user_entries
+						SET unread = false, last_read = NOW() WHERE ref_id IN
+							(SELECT id FROM
+								(SELECT DISTINCT id FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id
+									AND owner_uid = $owner_uid AND unread = true AND $date_qpart AND $search_qpart) as tmp)");
+				}
 
-			} else { // tag
+			} else if ($feed < LABEL_BASE_INDEX) { // label
+
+				$label_id = feed_to_label_id($feed);
+
 				db_query("UPDATE ttrss_user_entries
 					SET unread = false, last_read = NOW() WHERE ref_id IN
 						(SELECT id FROM
-							(SELECT DISTINCT ttrss_entries.id FROM ttrss_entries, ttrss_user_entries, ttrss_tags WHERE ref_id = ttrss_entries.id
-								AND post_int_id = int_id AND tag_name = '$feed'
-								AND ttrss_user_entries.owner_uid = $owner_uid AND unread = true AND $date_qpart) as tmp)");
+							(SELECT DISTINCT ttrss_entries.id FROM ttrss_entries, ttrss_user_entries, ttrss_user_labels2 WHERE ref_id = id
+								AND label_id = '$label_id' AND ref_id = article_id
+								AND owner_uid = $owner_uid AND unread = true AND $date_qpart AND $search_qpart) as tmp)");
 
 			}
+
+			ccache_update($feed, $owner_uid, $cat_view);
+
+		} else { // tag
+			db_query("UPDATE ttrss_user_entries
+				SET unread = false, last_read = NOW() WHERE ref_id IN
+					(SELECT id FROM
+						(SELECT DISTINCT ttrss_entries.id FROM ttrss_entries, ttrss_user_entries, ttrss_tags WHERE ref_id = ttrss_entries.id
+							AND post_int_id = int_id AND tag_name = '$feed'
+							AND ttrss_user_entries.owner_uid = $owner_uid AND unread = true AND $date_qpart AND $search_qpart) as tmp)");
+
+		}
 	}
 
 	function getAllCounters() {
@@ -1578,7 +1617,7 @@
 
 			$cv = array("id" => $i,
 				"counter" => (int) $count,
-				"auxcounter" => $auxctr);
+				"auxcounter" => (int) $auxctr);
 
 //			if (get_pref('EXTENDED_FEEDLIST'))
 //				$cv["xmsg"] = getFeedArticles($i)." ".__("total");
@@ -1706,6 +1745,8 @@
 			$auth_login = '', $auth_pass = '') {
 
 		global $fetch_last_error;
+		global $fetch_last_error_content;
+		global $fetch_last_error_code;
 
 		require_once "include/rssfuncs.php";
 
@@ -1716,6 +1757,10 @@
 		$contents = @fetch_file_contents($url, false, $auth_login, $auth_pass);
 
 		if (!$contents) {
+			if (preg_match("/cloudflare\.com/", $fetch_last_error_content)) {
+				$fetch_last_error .= " (feed behind Cloudflare)";
+			}
+
 			return array("code" => 5, "message" => $fetch_last_error);
 		}
 
@@ -1745,14 +1790,7 @@
 			"SELECT id FROM ttrss_feeds
 			WHERE feed_url = '$url' AND owner_uid = ".$_SESSION["uid"]);
 
-		if (strlen(FEED_CRYPT_KEY) > 0) {
-			require_once "crypt.php";
-			$auth_pass = substr(encrypt_string($auth_pass), 0, 250);
-			$auth_pass_encrypted = 'true';
-		} else {
-			$auth_pass_encrypted = 'false';
-		}
-
+		$auth_pass_encrypted = 'false';
 		$auth_pass = db_escape_string($auth_pass);
 
 		if (db_num_rows($result) == 0) {
@@ -1772,9 +1810,9 @@
 				set_basic_feed_info($feed_id);
 			}
 
-			return array("code" => 1);
+			return array("code" => 1, "feed_id" => (int) $feed_id);
 		} else {
-			return array("code" => 0);
+			return array("code" => 0, "feed_id" => (int) db_fetch_result($result, 0, "id"));
 		}
 	}
 
@@ -1878,7 +1916,7 @@
 		$attributes, $include_all_cats = true, $root_id = false, $nest_level = 0) {
 
 			if (!$root_id) {
-					print "<select id=\"$id\" name=\"$id\" default=\"$default_id\" onchange=\"catSelectOnChange(this)\" $attributes>";
+					print "<select id=\"$id\" name=\"$id\" default=\"$default_id\" $attributes>";
 			}
 
 			if ($root_id)
