@@ -55,20 +55,20 @@
 <html>
 <head>
 	<title>Tiny Tiny RSS</title>
+    <meta name="viewport" content="initial-scale=1,width=device-width" />
 
 	<script type="text/javascript">
 		var __ttrss_version = "<?php echo VERSION ?>"
 	</script>
 
 	<?php echo stylesheet_tag("lib/dijit/themes/claro/claro.css"); ?>
-	<?php echo stylesheet_tag("css/layout.css"); ?>
 
 	<?php if ($_SESSION["uid"]) {
 		$theme = get_pref( "USER_CSS_THEME", $_SESSION["uid"], false);
 		if ($theme && theme_valid("$theme")) {
 			echo stylesheet_tag(get_theme_path($theme));
 		} else {
-			echo stylesheet_tag("themes/default.php");
+			echo stylesheet_tag("css/default.css");
 		}
 	}
 	?>
@@ -110,13 +110,17 @@
 	} ?>
 
 	<script type="text/javascript">
+		'use strict';
 		require({cache:{}});
 	<?php
 		require_once 'lib/jshrink/Minifier.php';
 
-		print get_minified_js(array("tt-rss",
-			"functions", "feedlist", "viewfeed", "PluginHost"));
-
+		print get_minified_js(["tt-rss.js",
+			"functions.js", "feedlist.js", "viewfeed.js", "PluginHost.js"]);
+	?>
+	</script>
+	<script type="text/javascript">
+	<?php
 		foreach (PluginHost::getInstance()->get_plugins() as $n => $p) {
 			if (method_exists($p, "get_js")) {
 				echo "try {";
@@ -142,7 +146,7 @@
 	</script>
 </head>
 
-<body id="ttrssMain" class="claro">
+<body class="claro ttrss_main">
 
 <div id="overlay" style="display : block">
 	<div id="overlay_inner">
@@ -277,7 +281,7 @@
 
 		<div id="floatingTitle" style="visibility : hidden"></div>
 
-		<div id="headlines-frame" dojoType="dijit.layout.ContentPane"
+		<div id="headlines-frame" dojoType="dijit.layout.ContentPane" tabindex="0"
 				onscroll="headlines_scroll_handler(this)" region="center">
 			<div id="headlinesInnerContainer">
 				<div class="whiteBox"><?php echo __('Loading, please wait...') ?></div>

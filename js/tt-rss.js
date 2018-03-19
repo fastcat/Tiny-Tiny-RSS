@@ -148,7 +148,7 @@ function viewCurrentFeed(method) {
 
 function timeout() {
 	if (getInitParam("bw_limit") != "1") {
-		request_counters();
+		request_counters(true);
 		setTimeout(timeout, 60*1000);
 	}
 }
@@ -160,7 +160,7 @@ function search() {
 	if (dijit.byId("searchDlg"))
 		dijit.byId("searchDlg").destroyRecursive();
 
-	dialog = new dijit.Dialog({
+	var dialog = new dijit.Dialog({
 		id: "searchDlg",
 		title: __("Search"),
 		style: "width: 600px",
@@ -228,6 +228,7 @@ function init() {
 			"dijit/form/Form",
 			"dijit/form/RadioButton",
 			"dijit/form/Select",
+        	"dijit/form/MultiSelect",
 			"dijit/form/SimpleTextarea",
 			"dijit/form/TextBox",
 			"dijit/form/ComboBox",
@@ -364,7 +365,6 @@ function init_hotkey_actions() {
 	hotkey_actions["open_in_new_window"] = function() {
 		if (getActiveArticleId()) {
 			openArticleInNewWindow(getActiveArticleId());
-			return;
 		}
 	};
 	hotkey_actions["catchup_below"] = function() {
@@ -374,13 +374,9 @@ function init_hotkey_actions() {
 		catchupRelativeToArticle(0);
 	};
 	hotkey_actions["article_scroll_down"] = function() {
-		var ctr = $("content_insert") ? $("content_insert") : $("headlines-frame");
-
 		scrollArticle(40);
 	};
 	hotkey_actions["article_scroll_up"] = function() {
-		var ctr = $("content_insert") ? $("content_insert") : $("headlines-frame");
-
 		scrollArticle(-40);
 	};
 	hotkey_actions["close_article"] = function() {
@@ -632,7 +628,7 @@ function init_second_stage() {
 	var hotkeys = getInitParam("hotkeys");
 	var tmp = [];
 
-	for (sequence in hotkeys[1]) {
+	for (var sequence in hotkeys[1]) {
 		filtered = sequence.replace(/\|.*$/, "");
 		tmp[filtered] = hotkeys[1][sequence];
 	}
@@ -756,7 +752,7 @@ function parse_runtime_info(data) {
 
 	//console.log("parsing runtime info...");
 
-	for (k in data) {
+	for (var k in data) {
 		var v = data[k];
 
 //		console.log("RI: " + k + " => " + v);
@@ -851,25 +847,14 @@ function hotkey_handler(e) {
 	if (e.target.nodeName == "INPUT" || e.target.nodeName == "TEXTAREA") return;
 
 	var keycode = false;
-	var shift_key = false;
-	var ctrl_key = false;
-	var alt_key = false;
-	var meta_key = false;
 
 	var cmdline = $('cmdline');
-
-	shift_key = e.shiftKey;
-	ctrl_key = e.ctrlKey;
-	alt_key = e.altKey;
-	meta_key = e.metaKey;
 
 	if (window.event) {
 		keycode = window.event.keyCode;
 	} else if (e) {
 		keycode = e.which;
 	}
-
-	var keychar = String.fromCharCode(keycode);
 
 	if (keycode == 27) { // escape
 		hotkey_prefix = false;
@@ -878,9 +863,8 @@ function hotkey_handler(e) {
 	if (keycode == 16) return; // ignore lone shift
 	if (keycode == 17) return; // ignore lone ctrl
 
-	keychar = keychar.toLowerCase();
-
 	var hotkeys = getInitParam("hotkeys");
+	var keychar = String.fromCharCode(keycode).toLowerCase();
 
 	if (!hotkey_prefix && hotkeys[0].indexOf(keychar) != -1) {
 
@@ -893,6 +877,9 @@ function hotkey_handler(e) {
 		cmdline.innerHTML = keychar;
 		Element.show(cmdline);
 
+		e.stopPropagation();
+
+		// returning false here literally disables ctrl-c in browser lol (because C is a valid prefix)
 		return true;
 	}
 
@@ -901,10 +888,10 @@ function hotkey_handler(e) {
 	var hotkey = keychar.search(/[a-zA-Z0-9]/) != -1 ? keychar : "(" + keycode + ")";
 
 	// ensure ^*char notation
-	if (shift_key) hotkey = "*" + hotkey;
-	if (ctrl_key) hotkey = "^" + hotkey;
-	if (alt_key) hotkey = "+" + hotkey;
-	if (meta_key) hotkey = "%" + hotkey;
+	if (e.shiftKey) hotkey = "*" + hotkey;
+	if (e.ctrlKey) hotkey = "^" + hotkey;
+	if (e.altKey) hotkey = "+" + hotkey;
+	if (e.metaKey) hotkey = "%" + hotkey;
 
 	hotkey = hotkey_prefix ? hotkey_prefix + " " + hotkey : hotkey;
 	hotkey_prefix = false;
@@ -912,7 +899,7 @@ function hotkey_handler(e) {
 	var hotkey_action = false;
 	var hotkeys = getInitParam("hotkeys");
 
-	for (sequence in hotkeys[1]) {
+	for (var sequence in hotkeys[1]) {
 		if (sequence == hotkey) {
 			hotkey_action = hotkeys[1][sequence];
 			break;
@@ -923,6 +910,7 @@ function hotkey_handler(e) {
 
 	if (action != null) {
 		action();
+		e.stopPropagation();
 		return false;
 	}
 }
@@ -1088,11 +1076,11 @@ function update_random_feed() {
 }
 
 function hash_get(key) {
-	kv = window.location.hash.substring(1).toQueryParams();
+	var kv = window.location.hash.substring(1).toQueryParams();
 	return kv[key];
 }
 function hash_set(key, value) {
-	kv = window.location.hash.substring(1).toQueryParams();
+	var kv = window.location.hash.substring(1).toQueryParams();
 	kv[key] = value;
 	window.location.hash = $H(kv).toQueryString();
 }

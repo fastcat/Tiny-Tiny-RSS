@@ -1,5 +1,7 @@
 <?php
 class Af_Zz_ImgProxy extends Plugin {
+
+	/* @var PluginHost $host */
 	private $host;
 
 	function about() {
@@ -7,6 +9,8 @@ class Af_Zz_ImgProxy extends Plugin {
 			"Load insecure images via built-in proxy",
 			"fox");
 	}
+
+	private $ssl_known_whitelist = "imgur.com gfycat.com i.reddituploads.com pbs.twimg.com i.redd.it i.sli.mg media.tumblr.com";
 
 	function is_public_method($method) {
 		return $method === "imgproxy";
@@ -38,7 +42,7 @@ class Af_Zz_ImgProxy extends Plugin {
 
 	public function imgproxy() {
 
-		$url = rewrite_relative_url(SELF_URL_PATH, $_REQUEST["url"]);
+		$url = rewrite_relative_url(get_self_url_prefix(), $_REQUEST["url"]);
 
 		// called without user context, let's just redirect to original URL
 		if (!$_SESSION["uid"]) {
@@ -53,20 +57,21 @@ class Af_Zz_ImgProxy extends Plugin {
 		header("Content-Disposition: inline; filename=\"".basename($local_filename)."\"");
 
 		if (file_exists($local_filename)) {
-			$mimetype = mime_content_type($local_filename);
-			header("Content-type: $mimetype");
 
-			$stamp = gmdate("D, d M Y H:i:s", filemtime($local_filename)). " GMT";
-			header("Last-Modified: $stamp", true);
+			send_local_file($local_filename);
 
-			readfile($local_filename);
 		} else {
 			$data = fetch_file_contents(array("url" => $url));
 
 			if ($data) {
-				if (file_put_contents($local_filename, $data)) {
-					$mimetype = mime_content_type($local_filename);
-					header("Content-type: $mimetype");
+
+				$disable_cache = $this->host->get($this, "disable_cache");
+
+				if (!$disable_cache && strlen($data) > MIN_CACHE_FILE_SIZE) {
+					if (file_put_contents($local_filename, $data)) {
+						$mimetype = mime_content_type($local_filename);
+						header("Content-type: $mimetype");
+					}
 				}
 
 				print $data;
@@ -78,7 +83,7 @@ class Af_Zz_ImgProxy extends Plugin {
 				if (function_exists("imagecreate") && !isset($_REQUEST["text"])) {
 					$img = imagecreate(450, 75);
 
-					$bg = imagecolorallocate($img, 255, 255, 255);
+					/*$bg =*/ imagecolorallocate($img, 255, 255, 255);
 					$textcolor = imagecolorallocate($img, 255, 0, 0);
 
 					imagerectangle($img, 0, 0, 450-1, 75-1, $textcolor);
@@ -110,7 +115,7 @@ class Af_Zz_ImgProxy extends Plugin {
 
 		if ($all_remote) {
 			$host = parse_url($url, PHP_URL_HOST);
-			$self_host = parse_url(SELF_URL_PATH, PHP_URL_HOST);
+			$self_host = parse_url(get_self_url_prefix(), PHP_URL_HOST);
 
 			$is_remote = $host != $self_host;
 		} else {
@@ -119,7 +124,21 @@ class Af_Zz_ImgProxy extends Plugin {
 
 		if (($scheme != 'https' && $scheme != "") || $is_remote) {
 			if (strpos($url, "data:") !== 0) {
-				$url = get_self_url_prefix() . "/public.php?op=pluginhandler&plugin=af_zz_imgproxy&pmethod=imgproxy&url=" .
+				$parts = parse_url($url);
+
+				foreach (explode(" " , $this->ssl_known_whitelist) as $host) {
+					if (substr(strtolower($parts['host']), -strlen($host)) === strtolower($host)) {
+						$parts['scheme'] = 'https';
+						$url = build_url($parts);
+						if ($all_remote && $is_remote) {
+							break;
+						} else {
+							return $url;
+						}
+					}
+				}
+
+				return get_self_url_prefix() . "/public.php?op=pluginhandler&plugin=af_zz_imgproxy&pmethod=imgproxy&url=" .
 					urlencode($url);
 			}
 		}
@@ -127,6 +146,9 @@ class Af_Zz_ImgProxy extends Plugin {
 		return $url;
 	}
 
+	/**
+	 * @SuppressWarnings(PHPMD.UnusedFormalParameter)
+	 */
 	function hook_render_article_cdm($article, $api_mode = false) {
 
 		$need_saving = false;
@@ -175,7 +197,7 @@ class Af_Zz_ImgProxy extends Plugin {
 			}
 		}
 
-		if ($need_saving) $article["content"] = $doc->saveXML();
+		if ($need_saving) $article["content"] = $doc->saveHTML();
 
 		return $article;
 	}
@@ -207,8 +229,11 @@ class Af_Zz_ImgProxy extends Plugin {
 
 		$proxy_all = $this->host->get($this, "proxy_all");
 		print_checkbox("proxy_all", $proxy_all);
+		print "&nbsp;<label for=\"proxy_all\">" . __("Enable proxy for all remote images.") . "</label><br/>";
 
-		print "&nbsp;<label for=\"proxy_all\">" . __("Enable proxy for all remote images.") . "</label>";
+		$disable_cache = $this->host->get($this, "disable_cache");
+		print_checkbox("disable_cache", $disable_cache);
+		print "&nbsp;<label for=\"disable_cache\">" . __("Don't cache files locally.") . "</label>";
 
 		print "<p>"; print_button("submit", __("Save"));
 
@@ -218,9 +243,11 @@ class Af_Zz_ImgProxy extends Plugin {
 	}
 
 	function save() {
-		$proxy_all = checkbox_to_sql_bool($_POST["proxy_all"]) == "true";
+		$proxy_all = checkbox_to_sql_bool($_POST["proxy_all"]);
+		$disable_cache = checkbox_to_sql_bool($_POST["disable_cache"]);
 
-		$this->host->set($this, "proxy_all", $proxy_all);
+		$this->host->set($this, "proxy_all", $proxy_all, false);
+		$this->host->set($this, "disable_cache", $disable_cache);
 
 		echo __("Configuration saved");
 	}
