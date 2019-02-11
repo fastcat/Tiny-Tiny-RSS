@@ -1,29 +1,11 @@
-require(["dojo/_base/declare", "dojo/data/ItemFileWriteStore"], function (declare) {
-
-	return declare("fox.PrefFeedStore", dojo.data.ItemFileWriteStore, {
-
-		_saveEverything: function(saveCompleteCallback, saveFailedCallback,
-								  newFileContentString) {
-
-			dojo.xhrPost({
-				url: "backend.php",
-				content: {op: "pref-feeds", method: "savefeedorder",
-					payload: newFileContentString},
-				error: saveFailedCallback,
-				load: saveCompleteCallback});
-		},
-
-	});
-
-});
-
-require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], function (declare, domConstruct) {
+/* global lib,dijit */
+define(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], function (declare, domConstruct) {
 
 	return declare("fox.PrefFeedTree", lib.CheckBoxTree, {
 		_createTreeNode: function(args) {
-			var tnode = this.inherited(arguments);
+			const tnode = this.inherited(arguments);
 
-			var icon = dojo.doc.createElement('img');
+			const icon = dojo.doc.createElement('img');
 			if (args.item.icon && args.item.icon[0]) {
 				icon.src = args.item.icon[0];
 			} else {
@@ -32,7 +14,7 @@ require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functi
 			icon.className = 'tinyFeedIcon';
 			domConstruct.place(icon, tnode.iconNode, 'only');
 
-			var param = this.model.store.getValue(args.item, 'param');
+			let param = this.model.store.getValue(args.item, 'param');
 
 			if (param) {
 				param = dojo.doc.createElement('span');
@@ -42,8 +24,8 @@ require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functi
 				domConstruct.place(param, tnode.rowNode, 'first');
 			}
 
-			var id = args.item.id[0];
-			var bare_id = parseInt(id.substr(id.indexOf(':')+1));
+			const id = args.item.id[0];
+			const bare_id = parseInt(id.substr(id.indexOf(':')+1));
 
 			if (id.match("CAT:") && bare_id > 0) {
 				var menu = new dijit.Menu();
@@ -101,12 +83,12 @@ require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functi
 			return (!item || this.model.store.getValue(item, 'type') == 'category') ? (opened ? "dijitFolderOpened" : "dijitFolderClosed") : "feedIcon";
 		},
 		checkItemAcceptance: function(target, source, position) {
-			var item = dijit.getEnclosingWidget(target).item;
+			const item = dijit.getEnclosingWidget(target).item;
 
 			// disable copying items
 			source.copyState = function() { return false; };
 
-			var source_item = false;
+			let source_item = false;
 
 			source.forInSelectedItems(function(node) {
 				source_item = node.data.item;
@@ -114,8 +96,8 @@ require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functi
 
 			if (!source_item || !item) return false;
 
-			var id = this.tree.model.store.getValue(item, 'id');
-			var source_id = source.tree.model.store.getValue(source_item, 'id');
+			const id = this.tree.model.store.getValue(item, 'id');
+			const source_id = source.tree.model.store.getValue(source_item, 'id');
 
 			//console.log(id + " " + position + " " + source_id);
 

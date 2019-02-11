@@ -1,33 +1,13 @@
-require(["dojo/_base/declare", "dojo/data/ItemFileWriteStore"], function (declare) {
-
-	return declare("fox.PrefFilterStore", dojo.data.ItemFileWriteStore, {
-
-		_saveEverything: function (saveCompleteCallback, saveFailedCallback,
-								   newFileContentString) {
-
-			dojo.xhrPost({
-				url: "backend.php",
-				content: {
-					op: "pref-filters", method: "savefilterorder",
-					payload: newFileContentString
-				},
-				error: saveFailedCallback,
-				load: saveCompleteCallback
-			});
-		},
-
-	});
-});
-
-require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], function (declare, domConstruct) {
+/* global dijit,lib */
+define(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], function (declare, domConstruct) {
 
 	return declare("fox.PrefFilterTree", lib.CheckBoxTree, {
 		_createTreeNode: function(args) {
-			var tnode = this.inherited(arguments);
+			const tnode = this.inherited(arguments);
 
-			var enabled = this.model.store.getValue(args.item, 'enabled');
-			var param = this.model.store.getValue(args.item, 'param');
-			var rules = this.model.store.getValue(args.item, 'rules');
+			const enabled = this.model.store.getValue(args.item, 'enabled');
+			let param = this.model.store.getValue(args.item, 'param');
+			const rules = this.model.store.getValue(args.item, 'rules');
 
 			if (param) {
 				param = dojo.doc.createElement('span');
@@ -44,7 +24,7 @@ require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functi
 			}
 
 			if (this.model.store.getValue(args.item, 'id') != 'root') {
-				var img = dojo.doc.createElement('img');
+				const img = dojo.doc.createElement('img');
 				img.src ='images/filter.png';
 				img.className = 'markedPic';
 				tnode._filterIconNode = img;
@@ -55,10 +35,10 @@ require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functi
 		},
 
 		getLabel: function(item) {
-			var label = item.name;
+			let label = item.name;
 
-			var feed = this.model.store.getValue(item, 'feed');
-			var inverse = this.model.store.getValue(item, 'inverse');
+			const feed = this.model.store.getValue(item, 'feed');
+			const inverse = this.model.store.getValue(item, 'inverse');
 
 			if (feed)
 				label += " (" + __("in") + " " + feed + ")";
@@ -76,7 +56,7 @@ require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functi
 			return (!item || this.model.mayHaveChildren(item)) ? (opened ? "dijitFolderOpened" : "dijitFolderClosed") : "invisible";
 		},
 		getLabelClass: function (item, opened) {
-			var enabled = this.model.store.getValue(item, 'enabled');
+			const enabled = this.model.store.getValue(item, 'enabled');
 			return (enabled != false) ? "dijitTreeLabel labelFixedLength" : "dijitTreeLabel labelFixedLength filterDisabled";
 		},
 		getRowClass: function (item, opened) {
@@ -84,7 +64,7 @@ require(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functi
 				"dijitTreeRow Error";
 		},
 		checkItemAcceptance: function(target, source, position) {
-			var item = dijit.getEnclosingWidget(target).item;
+			const item = dijit.getEnclosingWidget(target).item;
 
 			// disable copying items
 			source.copyState = function() { return false; };

@@ -1,6 +1,6 @@
 <?php
 	define('EXPECTED_CONFIG_VERSION', 26);
-	define('SCHEMA_VERSION', 133);
+	define('SCHEMA_VERSION', 134);
 
 	define('LABEL_BASE_INDEX', -1024);
 	define('PLUGIN_FEED_BASE_INDEX', -128);
@@ -13,7 +13,6 @@
 	$fetch_last_error_content = false; // curl only for the time being
 	$fetch_effective_url = false;
 	$fetch_curl_used = false;
-	$suppress_debugging = false;
 
 	libxml_disable_entity_loader(true);
 
@@ -56,6 +55,10 @@
 	// default sleep interval between feed updates (sec)
 	define_default('MIN_CACHE_FILE_SIZE', 1024);
 	// do not cache files smaller than that (bytes)
+	define_default('MAX_CACHE_FILE_SIZE', 64*1024*1024);
+	// do not cache files larger than that (bytes)
+	define_default('MAX_DOWNLOAD_FILE_SIZE', 16*1024*1024);
+	// do not download general files larger than that (bytes)
 	define_default('CACHE_MAX_DAYS', 7);
 	// max age in days for various automatically cached (temporary) files
 	define_default('MAX_CONDITIONAL_INTERVAL', 3600*12);
@@ -152,66 +155,10 @@
 
 	$schema_version = false;
 
-	function _debug_suppress($suppress) {
-		global $suppress_debugging;
-
-		$suppress_debugging = $suppress;
+	// TODO: compat wrapper, remove at some point
+	function _debug($msg) {
+	    Debug::log($msg);
 	}
-
-	/**
-	 * Print a timestamped debug message.
-	 *
-	 * @param string $msg The debug message.
-	 * @return void
-	 */
-	function _debug($msg, $show = true) {
-		global $suppress_debugging;
-
-		//echo "[$suppress_debugging] $msg $show\n";
-
-		if ($suppress_debugging) return false;
-
-		$ts = strftime("%H:%M:%S", time());
-		if (function_exists('posix_getpid')) {
-			$ts = "$ts/" . posix_getpid();
-		}
-
-		if ($show && !(defined('QUIET') && QUIET)) {
-			print "[$ts] $msg\n";
-		}
-
-		if (defined('LOGFILE'))  {
-			$fp = fopen(LOGFILE, 'a+');
-
-			if ($fp) {
-				$locked = false;
-
-				if (function_exists("flock")) {
-					$tries = 0;
-
-					// try to lock logfile for writing
-					while ($tries < 5 && !$locked = flock($fp, LOCK_EX | LOCK_NB)) {
-						sleep(1);
-						++$tries;
-					}
-
-					if (!$locked) {
-						fclose($fp);
-						return;
-					}
-				}
-
-				fputs($fp, "[$ts] $msg\n");
-
-				if (function_exists("flock")) {
-					flock($fp, LOCK_UN);
-				}
-
-				fclose($fp);
-			}
-		}
-
-	} // function _debug
 
 	/**
 	 * Purge a feed old posts.
@@ -223,7 +170,7 @@
 	 * @access public
 	 * @return void
 	 */
-	function purge_feed($feed_id, $purge_interval, $debug = false) {
+	function purge_feed($feed_id, $purge_interval) {
 
 		if (!$purge_interval) $purge_interval = feed_purge_interval($feed_id);
 
@@ -288,9 +235,7 @@
 
 		CCache::update($feed_id, $owner_uid);
 
-		if ($debug) {
-			_debug("Purged feed $feed_id ($purge_interval): deleted $rows articles");
-		}
+        Debug::log("Purged feed $feed_id ($purge_interval): deleted $rows articles");
 
 		return $rows;
 	} // function purge_feed
@@ -317,6 +262,7 @@
 		}
 	}
 
+	// TODO: max_size currently only works for CURL transfers
 	// TODO: multiple-argument way is deprecated, first parameter is a hash now
 	function fetch_file_contents($options /* previously: 0: $url , 1: $type = false, 2: $login = false, 3: $pass = false,
 				4: $post_query = false, 5: $timeout = false, 6: $timestamp = 0, 7: $useragent = false*/) {
@@ -370,6 +316,8 @@
 		$last_modified = isset($options["last_modified"]) ? $options["last_modified"] : "";
 		$useragent = isset($options["useragent"]) ? $options["useragent"] : false;
 		$followlocation = isset($options["followlocation"]) ? $options["followlocation"] : true;
+		$max_size = isset($options["max_size"]) ? $options["max_size"] : MAX_DOWNLOAD_FILE_SIZE; // in bytes
+		$http_accept = isset($options["http_accept"]) ? $options["http_accept"] : false;
 
 		$url = ltrim($url, ' ');
 		$url = str_replace(' ', '%20', $url);
@@ -383,10 +331,16 @@
 
 			$ch = curl_init($url);
 
-			if ($last_modified && !$post_query) {
-				curl_setopt($ch, CURLOPT_HTTPHEADER,
-					array("If-Modified-Since: $last_modified"));
-			}
+			$curl_http_headers = [];
+
+			if ($last_modified && !$post_query)
+				array_push($curl_http_headers, "If-Modified-Since: $last_modified");
+
+			if ($http_accept)
+				array_push($curl_http_headers, "Accept: " . $http_accept);
+
+			if (count($curl_http_headers) > 0)
+				curl_setopt($ch, CURLOPT_HTTPHEADER, $curl_http_headers);
 
 			curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $timeout ? $timeout : FILE_FETCH_CONNECT_TIMEOUT);
 			curl_setopt($ch, CURLOPT_TIMEOUT, $timeout ? $timeout : FILE_FETCH_TIMEOUT);
@@ -400,6 +354,20 @@
 				SELF_USER_AGENT);
 			curl_setopt($ch, CURLOPT_ENCODING, "");
 			//curl_setopt($ch, CURLOPT_REFERER, $url);
+
+			if ($max_size) {
+				curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+				curl_setopt($ch, CURLOPT_BUFFERSIZE, 16384); // needed to get 5 arguments in progress function?
+
+				// holy shit closures in php
+				// download & upload are *expected* sizes respectively, could be zero
+				curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function($curl_handle, $download_size, $downloaded, $upload_size, $uploaded) use( &$max_size) {
+					Debug::log("[curl progressfunction] $downloaded $max_size", Debug::$LOG_EXTENDED);
+
+					return ($downloaded > $max_size) ? 1 : 0; // if max size is set, abort when exceeding it
+				});
+
+			}
 
 			if (!ini_get("open_basedir")) {
 				curl_setopt($ch, CURLOPT_COOKIEJAR, "/dev/null");
@@ -499,9 +467,11 @@
 						'protocol_version'=> 1.1)
 				  );
 
-			if (!$post_query && $last_modified) {
+			if (!$post_query && $last_modified)
 				array_push($context_options['http']['header'], "If-Modified-Since: $last_modified");
-			}
+
+			if ($http_accept)
+				array_push($context_options['http']['header'], "Accept: $http_accept");
 
 			if (defined('_HTTP_PROXY')) {
 				$context_options['http']['request_fulluri'] = true;
@@ -617,7 +587,7 @@
 		$profile = $profile ? $profile : null;
 
 		$u_sth = $pdo->prepare("SELECT pref_name
-			FROM ttrss_user_prefs WHERE owner_uid = :uid AND 
+			FROM ttrss_user_prefs WHERE owner_uid = :uid AND
 				(profile = :profile OR (:profile IS NULL AND profile IS NULL))");
 		$u_sth->execute([':uid' => $uid, ':profile' => $profile]);
 
@@ -671,22 +641,26 @@
 
 		if (!SINGLE_USER_MODE) {
 			$user_id = false;
+			$auth_module = false;
 
 			foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_AUTH_USER) as $plugin) {
 
 				$user_id = (int) $plugin->authenticate($login, $password);
 
 				if ($user_id) {
-					$_SESSION["auth_module"] = strtolower(get_class($plugin));
+					$auth_module = strtolower(get_class($plugin));
 					break;
 				}
 			}
 
 			if ($user_id && !$check_only) {
-				@session_start();
+
+				session_start();
+				session_regenerate_id(true);
 
 				$_SESSION["uid"] = $user_id;
 				$_SESSION["version"] = VERSION_STATIC;
+				$_SESSION["auth_module"] = $auth_module;
 
 				$pdo = DB::pdo();
 				$sth = $pdo->prepare("SELECT login,access_level,pwd_hash FROM ttrss_users
@@ -782,10 +756,11 @@
 	}
 
 	function logout_user() {
-		session_destroy();
+		@session_destroy();
 		if (isset($_COOKIE[session_name()])) {
 		   setcookie(session_name(), '', time()-42000, '/');
 		}
+		session_commit();
 	}
 
 	function validate_csrf($csrf_token) {
@@ -827,8 +802,7 @@
 				}
 
 				if (!$_SESSION["uid"]) {
-					@session_destroy();
-					setcookie(session_name(), '', time()-42000, '/');
+					logout_user();
 
 					render_login_form();
 					exit;
@@ -848,14 +822,14 @@
 
 				/* cleanup ccache */
 
-				$sth = $pdo->prepare("DELETE FROM ttrss_counters_cache WHERE owner_uid = ? 
+				$sth = $pdo->prepare("DELETE FROM ttrss_counters_cache WHERE owner_uid = ?
 					AND
 						(SELECT COUNT(id) FROM ttrss_feeds WHERE
 							ttrss_feeds.id = feed_id) = 0");
 
 				$sth->execute([$_SESSION['uid']]);
 
-				$sth = $pdo->prepare("DELETE FROM ttrss_cat_counters_cache WHERE owner_uid = ? 
+				$sth = $pdo->prepare("DELETE FROM ttrss_cat_counters_cache WHERE owner_uid = ?
 					AND
 						(SELECT COUNT(id) FROM ttrss_feed_categories WHERE
 							ttrss_feed_categories.id = feed_id) = 0");
@@ -1190,8 +1164,7 @@
 				"feed_debug_viewfeed" => __("Debug viewfeed()"),
 				"catchup_all" => __("Mark all feeds as read"),
 				"cat_toggle_collapse" => __("Un/collapse current category"),
-				"toggle_combined_mode" => __("Toggle combined mode"),
-				"toggle_cdm_expanded" => __("Toggle auto expand in combined mode")),
+				"toggle_combined_mode" => __("Toggle combined mode")),
 			__("Go to") => array(
 				"goto_all" => __("All articles"),
 				"goto_fresh" => __("Fresh"),
@@ -1259,7 +1232,6 @@
 			"f *d" => "feed_debug_update",
 			"f *g" => "feed_debug_viewfeed",
 			"f *c" => "toggle_combined_mode",
-			"f c" => "toggle_cdm_expanded",
 			"*q" => "catchup_all",
 			"x" => "cat_toggle_collapse",
 	//			"goto" => array(
@@ -1336,7 +1308,6 @@
 		$data["num_feeds"] = (int) $num_feeds;
 
 		$data['last_article_id'] = Article::getLastArticleId();
-		$data['cdm_expanded'] = get_pref('CDM_EXPANDED');
 
 		$data['dep_ts'] = calculate_dep_timestamp();
 		$data['reload_on_ts_change'] = !defined('_NO_RELOAD_ON_TS_CHANGE');
@@ -1389,7 +1360,7 @@
 		$search_query_leftover = array();
 
 		$pdo = Db::pdo();
-		
+
 		if ($search_language)
 			$search_language = $pdo->quote(mb_strtolower($search_language));
 		else
@@ -1535,6 +1506,66 @@
 		return false;
 	}
 
+	// check for locally cached (media) URLs and rewrite to local versions
+	// this is called separately after sanitize() and plugin render article hooks to allow
+	// plugins work on original source URLs used before caching
+
+	function rewrite_cached_urls($str) {
+		$charset_hack = '<head>
+				<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+			</head>';
+
+		$res = trim($str); if (!$res) return '';
+
+		$doc = new DOMDocument();
+		$doc->loadHTML($charset_hack . $res);
+		$xpath = new DOMXPath($doc);
+
+		$entries = $xpath->query('(//img[@src]|//video[@poster]|//video/source[@src]|//audio/source[@src])');
+
+		$need_saving = false;
+
+		foreach ($entries as $entry) {
+
+			if ($entry->hasAttribute('src') || $entry->hasAttribute('poster')) {
+
+				// should be already absolutized because this is called after sanitize()
+				$src = $entry->hasAttribute('poster') ? $entry->getAttribute('poster') : $entry->getAttribute('src');
+				$cached_filename = CACHE_DIR . '/images/' . sha1($src);
+
+				if (file_exists($cached_filename)) {
+
+					// this is strictly cosmetic
+					if ($entry->tagName == 'img') {
+						$suffix = ".png";
+					} else if ($entry->parentNode && $entry->parentNode->tagName == "video") {
+						$suffix = ".mp4";
+					} else if ($entry->parentNode && $entry->parentNode->tagName == "audio") {
+						$suffix = ".ogg";
+					} else {
+						$suffix = "";
+					}
+
+					$src = get_self_url_prefix() . '/public.php?op=cached_url&hash=' . sha1($src) . $suffix;
+
+					if ($entry->hasAttribute('poster'))
+						$entry->setAttribute('poster', $src);
+					else
+						$entry->setAttribute('src', $src);
+
+					$need_saving = true;
+				}
+			}
+		}
+
+		if ($need_saving) {
+			$doc->removeChild($doc->firstChild); //remove doctype
+			$res = $doc->saveHTML();
+		}
+
+		return $res;
+	}
+
 	function sanitize($str, $force_remove_images = false, $owner = false, $site_url = false, $highlight_words = false, $article_id = false) {
 		if (!$owner) $owner = $_SESSION["uid"];
 
@@ -1567,31 +1598,8 @@
 
 			if ($entry->hasAttribute('src')) {
 				$src = rewrite_relative_url($rewrite_base_url, $entry->getAttribute('src'));
-				$cached_filename = CACHE_DIR . '/images/' . sha1($src);
 
-				if (file_exists($cached_filename)) {
-
-					// this is strictly cosmetic
-					if ($entry->tagName == 'img') {
-						$suffix = ".png";
-					} else if ($entry->parentNode && $entry->parentNode->tagName == "video") {
-						$suffix = ".mp4";
-					} else if ($entry->parentNode && $entry->parentNode->tagName == "audio") {
-						$suffix = ".ogg";
-					} else {
-						$suffix = "";
-					}
-
-					$src = get_self_url_prefix() . '/public.php?op=cached_url&hash=' . sha1($src) . $suffix;
-
-					if ($entry->hasAttribute('srcset')) {
-						$entry->removeAttribute('srcset');
-					}
-
-					if ($entry->hasAttribute('sizes')) {
-						$entry->removeAttribute('sizes');
-					}
-				}
+				// cache stuff has gone to rewrite_cached_urls()
 
 				$entry->setAttribute('src', $src);
 			}
@@ -1616,22 +1624,32 @@
 						}
 					}
 				}
+			}
 
-				if (($owner && get_pref("STRIP_IMAGES", $owner)) ||
-					$force_remove_images || $_SESSION["bw_limit"]) {
+			if ($entry->hasAttribute('src') &&
+					($owner && get_pref("STRIP_IMAGES", $owner)) || $force_remove_images || $_SESSION["bw_limit"]) {
 
-					$p = $doc->createElement('p');
+				$p = $doc->createElement('p');
 
-					$a = $doc->createElement('a');
-					$a->setAttribute('href', $entry->getAttribute('src'));
+				$a = $doc->createElement('a');
+				$a->setAttribute('href', $entry->getAttribute('src'));
 
-					$a->appendChild(new DOMText($entry->getAttribute('src')));
-					$a->setAttribute('target', '_blank');
-					$a->setAttribute('rel', 'noopener noreferrer');
+				$a->appendChild(new DOMText($entry->getAttribute('src')));
+				$a->setAttribute('target', '_blank');
+				$a->setAttribute('rel', 'noopener noreferrer');
 
-					$p->appendChild($a);
+				$p->appendChild($a);
 
-					$entry->parentNode->replaceChild($p, $entry);
+				if ($entry->nodeName == 'source') {
+
+					if ($entry->parentNode && $entry->parentNode->parentNode)
+						$entry->parentNode->parentNode->replaceChild($p, $entry->parentNode);
+
+				} else if ($entry->nodeName == 'img') {
+
+					if ($entry->parentNode)
+						$entry->parentNode->replaceChild($p, $entry);
+
 				}
 			}
 
@@ -1740,6 +1758,10 @@
 				foreach ($entry->attributes as $attr) {
 
 					if (strpos($attr->nodeName, 'on') === 0) {
+						array_push($attrs_to_remove, $attr);
+					}
+
+					if (strpos($attr->nodeName, "data-") === 0) {
 						array_push($attrs_to_remove, $attr);
 					}
 
@@ -1979,7 +2001,7 @@
 		}
 
 		$sth = $pdo->prepare("SELECT id FROM ttrss_feed_categories
-				WHERE (parent_cat = :parent OR (:parent IS NULL AND parent_cat IS NULL)) 
+				WHERE (parent_cat = :parent OR (:parent IS NULL AND parent_cat IS NULL))
 				AND title = :title AND owner_uid = :uid");
 		$sth->execute([':parent' => $parent_cat_id, ':title' => $feed_cat, ':uid' => $_SESSION['uid']]);
 
@@ -2072,7 +2094,7 @@
 		$sth = $pdo->prepare("SELECT access_key FROM ttrss_access_keys
 				WHERE feed_id = ? AND is_cat = ?
 				AND owner_uid = ?");
-		$sth->execute([$feed_id, (int)$is_cat, $owner_uid]);
+		$sth->execute([$feed_id, $is_cat, $owner_uid]);
 
 		if ($row = $sth->fetch()) {
 			return $row["access_key"];
@@ -2083,7 +2105,7 @@
 					(access_key, feed_id, is_cat, owner_uid)
 					VALUES (?, ?, ?, ?)");
 
-			$sth->execute([$key, $feed_id, (int)$is_cat, $owner_uid]);
+			$sth->execute([$key, $feed_id, $is_cat, $owner_uid]);
 
 			return $key;
 		}
@@ -2358,7 +2380,6 @@
 	}
 
 	function get_minified_js($files) {
-		require_once 'lib/jshrink/Minifier.php';
 
 		$rv = '';
 
@@ -2537,6 +2558,9 @@
 		should be loaded systemwide in config.php */
 	function send_local_file($filename) {
 		if (file_exists($filename)) {
+
+			if (is_writable($filename)) touch($filename);
+
 			$tmppluginhost = new PluginHost();
 
 			$tmppluginhost->load(PLUGINS, PluginHost::KIND_SYSTEM);
@@ -2547,6 +2571,13 @@
 			}
 
 			$mimetype = mime_content_type($filename);
+
+			// this is hardly ideal but 1) only media is cached in images/ and 2) seemingly only mp4
+			// video files are detected as octet-stream by mime_content_type()
+
+			if ($mimetype == "application/octet-stream")
+				$mimetype = "video/mp4";
+
 			header("Content-type: $mimetype");
 
 			$stamp = gmdate("D, d M Y H:i:s", filemtime($filename)) . " GMT";

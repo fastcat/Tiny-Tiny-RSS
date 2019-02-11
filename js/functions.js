@@ -1,8 +1,12 @@
-var loading_progress = 0;
-var sanity_check_done = false;
-var init_params = {};
-var _label_base_index = -1024;
-var notify_hide_timerid = false;
+/* global dijit, __ */
+
+let init_params = {};
+let _label_base_index = -1024;
+let loading_progress = 0;
+let notify_hide_timerid = false;
+
+let hotkey_prefix = 0;
+let hotkey_prefix_pressed = false;
 
 Ajax.Base.prototype.initialize = Ajax.Base.prototype.initialize.wrap(
 	function (callOriginal, options) {
@@ -22,14 +26,36 @@ Ajax.Base.prototype.initialize = Ajax.Base.prototype.initialize.wrap(
 	}
 );
 
+/* xhr shorthand helpers */
+
+function xhrPost(url, params, complete) {
+	console.log("xhrPost:", params);
+	return new Ajax.Request(url, {
+		parameters: params,
+		onComplete: complete
+	});
+}
+
+function xhrJson(url, params, complete) {
+	return xhrPost(url, params, (reply) => {
+		try {
+			const obj = JSON.parse(reply.responseText);
+			complete(obj);
+		} catch (e) {
+			console.error("xhrJson", e, reply);
+			complete(null);
+		}
+
+	})
+}
+
 /* add method to remove element from array */
 
 Array.prototype.remove = function(s) {
-	for (var i=0; i < this.length; i++) {
+	for (let i=0; i < this.length; i++) {
 		if (s == this[i]) this.splice(i, 1);
 	}
 };
-
 
 function report_error(message, filename, lineno, colno, error) {
 	exception_error(error, null, filename, lineno);
@@ -42,23 +68,23 @@ function exception_error(e, e_compat, filename, lineno, colno) {
 
 	try {
 		console.error(e);
-		var msg = e.toString();
+		const msg = e.toString();
 
 		try {
-			new Ajax.Request("backend.php", {
-				parameters: {op: "rpc", method: "log",
+			xhrPost("backend.php",
+				{op: "rpc", method: "log",
 					file: e.fileName ? e.fileName : filename,
 					line: e.lineNumber ? e.lineNumber : lineno,
 					msg: msg, context: e.stack},
-				onComplete: function (transport) {
+				(transport) => {
 					console.warn(transport.responseText);
-				} });
+				});
 
 		} catch (e) {
 			console.error("Exception while trying to log the error.", e);
 		}
 
-		var content = "<div class='fatalError'><p>" + msg + "</p>";
+		let content = "<div class='fatalError'><p>" + msg + "</p>";
 
 		if (e.stack) {
 			content += "<div><b>Stack trace:</b></div>" +
@@ -77,7 +103,7 @@ function exception_error(e, e_compat, filename, lineno, colno) {
 		if (dijit.byId("exceptionDlg"))
 			dijit.byId("exceptionDlg").destroyRecursive();
 
-		var dialog = new dijit.Dialog({
+		const dialog = new dijit.Dialog({
 			id: "exceptionDlg",
 			title: "Unhandled exception",
 			style: "width: 600px",
@@ -101,7 +127,7 @@ function param_escape(arg) {
 
 function notify_real(msg, no_hide, n_type) {
 
-	var n = $("notify");
+	const n = $("notify");
 
 	if (!n) return;
 
@@ -183,7 +209,7 @@ function notify_info(msg, no_hide) {
 
 function setCookie(name, value, lifetime, path, domain, secure) {
 
-	var d = false;
+	let d = false;
 
 	if (lifetime) {
 		d = new Date();
@@ -216,19 +242,19 @@ function delCookie(name, path, domain) {
 
 function getCookie(name) {
 
-	var dc = document.cookie;
-	var prefix = name + "=";
-	var begin = dc.indexOf("; " + prefix);
+	const dc = document.cookie;
+	const prefix = name + "=";
+	let begin = dc.indexOf("; " + prefix);
 	if (begin == -1) {
-	    begin = dc.indexOf(prefix);
-	    if (begin != 0) return null;
+		begin = dc.indexOf(prefix);
+		if (begin != 0) return null;
 	}
 	else {
-	    begin += 2;
+		begin += 2;
 	}
-	var end = document.cookie.indexOf(";", begin);
+	let end = document.cookie.indexOf(";", begin);
 	if (end == -1) {
-	    end = dc.length;
+		end = dc.length;
 	}
 	return unescape(dc.substring(begin + prefix.length, end));
 }
@@ -246,13 +272,13 @@ function gotoMain() {
 }
 
 function toggleSelectRowById(sender, id) {
-	var row = $(id);
+	const row = $(id);
 	return toggleSelectRow(sender, row);
 }
 
 /* this is for dijit Checkbox */
 function toggleSelectListRow2(sender) {
-	var row = sender.domNode.parentNode;
+	const row = sender.domNode.parentNode;
 	return toggleSelectRow(sender, row);
 }
 
@@ -301,7 +327,7 @@ function getURLParam(param){
 }
 
 function closeInfoBox() {
-	var dialog = dijit.byId("infoBox");
+	const dialog = dijit.byId("infoBox");
 
 	if (dialog)	dialog.hide();
 
@@ -313,21 +339,18 @@ function displayDlg(title, id, param, callback) {
 
 	notify_progress("Loading, please wait...", true);
 
-	var query = "?op=dlg&method=" +
-		param_escape(id) + "&param=" + param_escape(param);
+	const query = { op: "dlg", method: id, param: param };
 
-	new Ajax.Request("backend.php", {
-		parameters: query,
-		onComplete: function (transport) {
-			infobox_callback2(transport, title);
-			if (callback) callback(transport);
-		} });
+	xhrPost("backend.php", query, (transport) => {
+		infobox_callback2(transport, title);
+		if (callback) callback(transport);
+	});
 
 	return false;
 }
 
 function infobox_callback2(transport, title) {
-	var dialog = false;
+	let dialog = false;
 
 	if (dijit.byId("infoBox")) {
 		dialog = dijit.byId("infoBox");
@@ -336,7 +359,7 @@ function infobox_callback2(transport, title) {
 	//console.log("infobox_callback2");
 	notify('');
 
-	var content = transport.responseText;
+	const content = transport.responseText;
 
 	if (!dialog) {
 		dialog = new dijit.Dialog({
@@ -390,7 +413,7 @@ function fatalError(code, msg, ext_info) {
 			msg = ERRORS[code];
 		}
 
-		var content = "<div><b>Error code:</b> " + code + "</div>" +
+		let content = "<div><b>Error code:</b> " + code + "</div>" +
 			"<p>" + msg + "</p>";
 
 		if (ext_info) {
@@ -399,7 +422,7 @@ function fatalError(code, msg, ext_info) {
 				ext_info + "</textarea>";
 		}
 
-		var dialog = new dijit.Dialog({
+		const dialog = new dijit.Dialog({
 			title: "Fatal error",
 			style: "width: 600px",
 			content: content});
@@ -413,9 +436,9 @@ function fatalError(code, msg, ext_info) {
 }
 
 function filterDlgCheckAction(sender) {
-	var action = sender.value;
+	const action = sender.value;
 
-	var action_param = $("filterDlg_paramBox");
+	const action_param = $("filterDlg_paramBox");
 
 	if (!action_param) {
 		console.log("filterDlgCheckAction: can't find action param box!");
@@ -455,17 +478,8 @@ function loading_set_progress(p) {
 		dijit.byId("loading_bar").update({progress: loading_progress});
 
 	if (loading_progress >= 90)
-		remove_splash();
-
-}
-
-function remove_splash() {
-
-	if (Element.visible("overlay")) {
-		console.log("about to remove splash, OMG!");
 		Element.hide("overlay");
-		console.log("removed splash!");
-	}
+
 }
 
 function strip_tags(s) {
@@ -474,8 +488,8 @@ function strip_tags(s) {
 
 function hotkey_prefix_timeout() {
 
-	var date = new Date();
-	var ts = Math.round(date.getTime() / 1000);
+	const date = new Date();
+	const ts = Math.round(date.getTime() / 1000);
 
 	if (hotkey_prefix_pressed && ts - hotkey_prefix_pressed >= 5) {
 		console.log("hotkey_prefix seems to be stuck, aborting");
@@ -483,9 +497,6 @@ function hotkey_prefix_timeout() {
 		hotkey_prefix = false;
 		Element.hide('cmdline');
 	}
-
-	setTimeout(hotkey_prefix_timeout, 1000);
-
 }
 
 function uploadIconHandler(rc) {
@@ -509,45 +520,40 @@ function uploadIconHandler(rc) {
 
 function removeFeedIcon(id) {
 	if (confirm(__("Remove stored feed icon?"))) {
-		var query = "backend.php?op=pref-feeds&method=removeicon&feed_id=" + param_escape(id);
-
-		console.log(query);
 
 		notify_progress("Removing feed icon...", true);
 
-		new Ajax.Request("backend.php", {
-			parameters: query,
-			onComplete: function(transport) {
-				notify_info("Feed icon removed.");
-				if (inPreferences()) {
-					updateFeedList();
-				} else {
-					setTimeout('updateFeedList(false, false)', 50);
-				}
-			} });
+		const query = { op: "pref-feeds", method: "removeicon", feed_id: id };
+
+		xhrPost("backend.php", query, (transport) => {
+			notify_info("Feed icon removed.");
+			if (inPreferences()) {
+				updateFeedList();
+			} else {
+				setTimeout('updateFeedList(false, false)', 50);
+			}
+		});
 	}
 
 	return false;
 }
 
 function uploadFeedIcon() {
-	var file = $("icon_file");
+	const file = $("icon_file");
 
 	if (file.value.length == 0) {
 		alert(__("Please select an image file to upload."));
-	} else {
-		if (confirm(__("Upload new icon for this feed?"))) {
+	} else if (confirm(__("Upload new icon for this feed?"))) {
 			notify_progress("Uploading, please wait...", true);
 			return true;
 		}
-	}
 
 	return false;
 }
 
 function addLabel(select, callback) {
 
-	var caption = prompt(__("Please enter label caption:"), "");
+	const caption = prompt(__("Please enter label caption:"), "");
 
 	if (caption != undefined) {
 
@@ -556,45 +562,39 @@ function addLabel(select, callback) {
 			return false;
 		}
 
-		var query = "?op=pref-labels&method=add&caption=" +
-			param_escape(caption);
+		const query = { op: "pref-labels", method: "add", caption: caption };
 
 		if (select)
-			query += "&output=select";
+			Object.extend(query, {output: "select"});
 
 		notify_progress("Loading, please wait...", true);
 
-		if (inPreferences() && !select) active_tab = "labelConfig";
-
-		new Ajax.Request("backend.php", {
-			parameters: query,
-			onComplete: function(transport) {
-				if (callback) {
-					callback(transport);
-				} else if (inPreferences()) {
-					updateLabelList();
-				} else {
-					updateFeedList();
-				}
-		} });
-
+		xhrPost("backend.php", query, (transport) => {
+			if (callback) {
+				callback(transport);
+			} else if (inPreferences()) {
+				updateLabelList();
+			} else {
+				updateFeedList();
+			}
+		});
 	}
 
 }
 
 function quickAddFeed() {
-	var query = "backend.php?op=feeds&method=quickAddFeed";
+	const query = "backend.php?op=feeds&method=quickAddFeed";
 
 	// overlapping widgets
 	if (dijit.byId("batchSubDlg")) dijit.byId("batchSubDlg").destroyRecursive();
 	if (dijit.byId("feedAddDlg"))	dijit.byId("feedAddDlg").destroyRecursive();
 
-	var dialog = new dijit.Dialog({
+	const dialog = new dijit.Dialog({
 		id: "feedAddDlg",
 		title: __("Subscribe to Feed"),
 		style: "width: 600px",
 		show_error: function(msg) {
-			var elem = $("fadd_error_message");
+			const elem = $("fadd_error_message");
 
 			elem.innerHTML = msg;
 
@@ -606,33 +606,31 @@ function quickAddFeed() {
 			if (this.validate()) {
 				console.log(dojo.objectToQuery(this.attr('value')));
 
-				var feed_url = this.attr('value').feed;
+				const feed_url = this.attr('value').feed;
 
 				Element.show("feed_add_spinner");
 				Element.hide("fadd_error_message");
 
-				new Ajax.Request("backend.php", {
-					parameters: dojo.objectToQuery(this.attr('value')),
-					onComplete: function(transport) {
+				xhrPost("backend.php", this.attr('value'), (transport) => {
+					try {
+
 						try {
-
-							try {
-								var reply = JSON.parse(transport.responseText);
-							} catch (e) {
-								Element.hide("feed_add_spinner");
-								alert(__("Failed to parse output. This can indicate server timeout and/or network issues. Backend output was logged to browser console."));
-								console.log('quickAddFeed, backend returned:' + transport.responseText);
-								return;
-							}
-
-							var rc = reply['result'];
-
-							notify('');
+							var reply = JSON.parse(transport.responseText);
+						} catch (e) {
 							Element.hide("feed_add_spinner");
+							alert(__("Failed to parse output. This can indicate server timeout and/or network issues. Backend output was logged to browser console."));
+							console.log('quickAddFeed, backend returned:' + transport.responseText);
+							return;
+						}
 
-							console.log(rc);
+						const rc = reply['result'];
 
-							switch (parseInt(rc['code'])) {
+						notify('');
+						Element.hide("feed_add_spinner");
+
+						console.log(rc);
+
+						switch (parseInt(rc['code'])) {
 							case 1:
 								dialog.hide();
 								notify_info(__("Subscribed to %s").replace("%s", feed_url));
@@ -646,19 +644,19 @@ function quickAddFeed() {
 								dialog.show_error(__("Specified URL doesn't seem to contain any feeds."));
 								break;
 							case 4:
-								var feeds = rc['feeds'];
+								const feeds = rc['feeds'];
 
 								Element.show("fadd_multiple_notify");
 
-								var select = dijit.byId("feedDlg_feedContainerSelect");
+								const select = dijit.byId("feedDlg_feedContainerSelect");
 
 								while (select.getOptions().length > 0)
 									select.removeOption(0);
 
 								select.addOption({value: '', label: __("Expand to select feed")});
 
-								var count = 0;
-								for (var feedUrl in feeds) {
+								let count = 0;
+								for (const feedUrl in feeds) {
 									select.addOption({value: feedUrl, label: feeds[feedUrl]});
 									count++;
 								}
@@ -668,25 +666,23 @@ function quickAddFeed() {
 								break;
 							case 5:
 								dialog.show_error(__("Couldn't download the specified URL: %s").
-										replace("%s", rc['message']));
+								replace("%s", rc['message']));
 								break;
 							case 6:
 								dialog.show_error(__("XML validation failed: %s").
-										replace("%s", rc['message']));
+								replace("%s", rc['message']));
 								break;
 							case 0:
 								dialog.show_error(__("You are already subscribed to this feed."));
 								break;
-							}
-
-						} catch (e) {
-							console.error(transport.responseText);
-							exception_error(e);
 						}
 
-					} });
-
-				}
+					} catch (e) {
+						console.error(transport.responseText);
+						exception_error(e);
+					}
+				});
+			}
 		},
 		href: query});
 
@@ -694,51 +690,46 @@ function quickAddFeed() {
 }
 
 function createNewRuleElement(parentNode, replaceNode) {
-	var form = document.forms["filter_new_rule_form"];
+	const form = document.forms["filter_new_rule_form"];
 
 	//form.reg_exp.value = form.reg_exp.value.replace(/(<([^>]+)>)/ig,"");
 
-	var query = "backend.php?op=pref-filters&method=printrulename&rule="+
-		param_escape(dojo.formToJson(form));
+	const query = { op: "pref-filters", method: "printrulename", rule: dojo.formToJson(form) };
 
-	console.log(query);
+	xhrPost("backend.php", query, (transport) => {
+		try {
+			const li = dojo.create("li");
 
-	new Ajax.Request("backend.php", {
-		parameters: query,
-		onComplete: function (transport) {
-			try {
-				var li = dojo.create("li");
+			const cb = dojo.create("input", { type: "checkbox" }, li);
 
-				var cb = dojo.create("input", { type: "checkbox" }, li);
+			new dijit.form.CheckBox({
+				onChange: function() {
+					toggleSelectListRow2(this) },
+			}, cb);
 
-				new dijit.form.CheckBox({
-					onChange: function() {
-						toggleSelectListRow2(this) },
-				}, cb);
+			dojo.create("input", { type: "hidden",
+				name: "rule[]",
+				value: dojo.formToJson(form) }, li);
 
-				dojo.create("input", { type: "hidden",
-					name: "rule[]",
-					value: dojo.formToJson(form) }, li);
+			dojo.create("span", {
+				onclick: function() {
+					dijit.byId('filterEditDlg').editRule(this);
+				},
+				innerHTML: transport.responseText }, li);
 
-				dojo.create("span", {
-					onclick: function() {
-						dijit.byId('filterEditDlg').editRule(this);
-					},
-					innerHTML: transport.responseText }, li);
-
-				if (replaceNode) {
-					parentNode.replaceChild(li, replaceNode);
-				} else {
-					parentNode.appendChild(li);
-				}
-			} catch (e) {
-				exception_error(e);
+			if (replaceNode) {
+				parentNode.replaceChild(li, replaceNode);
+			} else {
+				parentNode.appendChild(li);
 			}
-	} });
+		} catch (e) {
+			exception_error(e);
+		}
+	});
 }
 
 function createNewActionElement(parentNode, replaceNode) {
-	var form = document.forms["filter_new_action_form"];
+	const form = document.forms["filter_new_action_form"];
 
 	if (form.action_id.value == 7) {
 		form.action_param.value = form.action_param_label.value;
@@ -746,44 +737,40 @@ function createNewActionElement(parentNode, replaceNode) {
 		form.action_param.value = form.action_param_plugin.value;
 	}
 
-	var query = "backend.php?op=pref-filters&method=printactionname&action="+
-		param_escape(dojo.formToJson(form));
+	const query = { op: "pref-filters", method: "printactionname",
+		action: dojo.formToJson(form) };
 
-	console.log(query);
+	xhrPost("backend.php", query, (transport) => {
+		try {
+			const li = dojo.create("li");
 
-	new Ajax.Request("backend.php", {
-		parameters: query,
-		onComplete: function (transport) {
-			try {
-				var li = dojo.create("li");
+			const cb = dojo.create("input", { type: "checkbox" }, li);
 
-				var cb = dojo.create("input", { type: "checkbox" }, li);
+			new dijit.form.CheckBox({
+				onChange: function() {
+					toggleSelectListRow2(this) },
+			}, cb);
 
-				new dijit.form.CheckBox({
-					onChange: function() {
-						toggleSelectListRow2(this) },
-				}, cb);
+			dojo.create("input", { type: "hidden",
+				name: "action[]",
+				value: dojo.formToJson(form) }, li);
 
-				dojo.create("input", { type: "hidden",
-					name: "action[]",
-					value: dojo.formToJson(form) }, li);
+			dojo.create("span", {
+				onclick: function() {
+					dijit.byId('filterEditDlg').editAction(this);
+				},
+				innerHTML: transport.responseText }, li);
 
-				dojo.create("span", {
-					onclick: function() {
-						dijit.byId('filterEditDlg').editAction(this);
-					},
-					innerHTML: transport.responseText }, li);
-
-				if (replaceNode) {
-					parentNode.replaceChild(li, replaceNode);
-				} else {
-					parentNode.appendChild(li);
-				}
-
-			} catch (e) {
-				exception_error(e);
+			if (replaceNode) {
+				parentNode.replaceChild(li, replaceNode);
+			} else {
+				parentNode.appendChild(li);
 			}
-		} });
+
+		} catch (e) {
+			exception_error(e);
+		}
+	});
 }
 
 
@@ -791,10 +778,10 @@ function addFilterRule(replaceNode, ruleStr) {
 	if (dijit.byId("filterNewRuleDlg"))
 		dijit.byId("filterNewRuleDlg").destroyRecursive();
 
-	var query = "backend.php?op=pref-filters&method=newrule&rule=" +
+	const query = "backend.php?op=pref-filters&method=newrule&rule=" +
 		param_escape(ruleStr);
 
-	var rule_dlg = new dijit.Dialog({
+	const rule_dlg = new dijit.Dialog({
 		id: "filterNewRuleDlg",
 		title: ruleStr ? __("Edit rule") : __("Add rule"),
 		style: "width: 600px",
@@ -813,10 +800,10 @@ function addFilterAction(replaceNode, actionStr) {
 	if (dijit.byId("filterNewActionDlg"))
 		dijit.byId("filterNewActionDlg").destroyRecursive();
 
-	var query = "backend.php?op=pref-filters&method=newaction&action=" +
+	const query = "backend.php?op=pref-filters&method=newaction&action=" +
 		param_escape(actionStr);
 
-	var rule_dlg = new dijit.Dialog({
+	const rule_dlg = new dijit.Dialog({
 		id: "filterNewActionDlg",
 		title: actionStr ? __("Edit action") : __("Add action"),
 		style: "width: 600px",
@@ -844,72 +831,70 @@ function editFilterTest(query) {
 		limit: 100,
 		max_offset: 10000,
 		getTestResults: function(query, offset) {
-			var updquery = query + "&offset=" + offset + "&limit=" + test_dlg.limit;
+		const updquery = query + "&offset=" + offset + "&limit=" + test_dlg.limit;
 
-			console.log("getTestResults:" + offset);
+		console.log("getTestResults:" + offset);
 
-			new Ajax.Request("backend.php", {
-				parameters: updquery,
-				onComplete: function (transport) {
-					try {
-						var result = JSON.parse(transport.responseText);
+		xhrPost("backend.php", updquery, (transport) => {
+				try {
+					const result = JSON.parse(transport.responseText);
 
-						if (result && dijit.byId("filterTestDlg") && dijit.byId("filterTestDlg").open) {
-							test_dlg.results += result.size();
+					if (result && dijit.byId("filterTestDlg") && dijit.byId("filterTestDlg").open) {
+						test_dlg.results += result.length;
 
-							console.log("got results:" + result.size());
+						console.log("got results:" + result.length);
 
-							$("prefFilterProgressMsg").innerHTML = __("Looking for articles (%d processed, %f found)...")
-								.replace("%f", test_dlg.results)
-								.replace("%d", offset);
+						$("prefFilterProgressMsg").innerHTML = __("Looking for articles (%d processed, %f found)...")
+							.replace("%f", test_dlg.results)
+							.replace("%d", offset);
 
-							console.log(offset + " " + test_dlg.max_offset);
+						console.log(offset + " " + test_dlg.max_offset);
 
-							for (var i = 0; i < result.size(); i++) {
-								var tmp = new Element("table");
-								tmp.innerHTML = result[i];
-								dojo.parser.parse(tmp);
+						for (let i = 0; i < result.length; i++) {
+							const tmp = new Element("table");
+							tmp.innerHTML = result[i];
+							dojo.parser.parse(tmp);
 
-								$("prefFilterTestResultList").innerHTML += tmp.innerHTML;
-							}
+							$("prefFilterTestResultList").innerHTML += tmp.innerHTML;
+						}
 
-							if (test_dlg.results < 30 && offset < test_dlg.max_offset) {
+						if (test_dlg.results < 30 && offset < test_dlg.max_offset) {
 
-								// get the next batch
-								window.setTimeout(function () {
-									test_dlg.getTestResults(query, offset + test_dlg.limit);
-								}, 0);
+							// get the next batch
+							window.setTimeout(function () {
+								test_dlg.getTestResults(query, offset + test_dlg.limit);
+							}, 0);
 
-							} else {
-								// all done
-
-								Element.hide("prefFilterLoadingIndicator");
-
-								if (test_dlg.results == 0) {
-									$("prefFilterTestResultList").innerHTML = "<tr><td align='center'>No recent articles matching this filter have been found.</td></tr>";
-									$("prefFilterProgressMsg").innerHTML = "Articles matching this filter:";
-								} else {
-									$("prefFilterProgressMsg").innerHTML = __("Found %d articles matching this filter:")
-										.replace("%d", test_dlg.results);
-								}
-
-							}
-
-						} else if (!result) {
-							console.log("getTestResults: can't parse results object");
+						} else {
+							// all done
 
 							Element.hide("prefFilterLoadingIndicator");
 
-							notify_error("Error while trying to get filter test results.");
+							if (test_dlg.results == 0) {
+								$("prefFilterTestResultList").innerHTML = "<tr><td align='center'>No recent articles matching this filter have been found.</td></tr>";
+								$("prefFilterProgressMsg").innerHTML = "Articles matching this filter:";
+							} else {
+								$("prefFilterProgressMsg").innerHTML = __("Found %d articles matching this filter:")
+									.replace("%d", test_dlg.results);
+							}
 
-						} else {
-							console.log("getTestResults: dialog closed, bailing out.");
 						}
-					} catch (e) {
-						exception_error(e);
-					}
 
-				} });
+					} else if (!result) {
+						console.log("getTestResults: can't parse results object");
+
+						Element.hide("prefFilterLoadingIndicator");
+
+						notify_error("Error while trying to get filter test results.");
+
+					} else {
+						console.log("getTestResults: dialog closed, bailing out.");
+					}
+				} catch (e) {
+					exception_error(e);
+				}
+
+			});
 		},
 		href: query});
 
@@ -922,7 +907,7 @@ function editFilterTest(query) {
 }
 
 function quickAddFilter() {
-	var query = "";
+	let query = "";
 	if (!inPreferences()) {
 		query = "backend.php?op=pref-filters&method=newfilter&feed=" +
 			param_escape(getActiveFeedId()) + "&is_cat=" +
@@ -939,12 +924,12 @@ function quickAddFilter() {
 	if (dijit.byId("filterEditDlg"))
 		dijit.byId("filterEditDlg").destroyRecursive();
 
-	var dialog = new dijit.Dialog({
+	const dialog = new dijit.Dialog({
 		id: "filterEditDlg",
 		title: __("Create Filter"),
 		style: "width: 600px",
 		test: function() {
-			var query = "backend.php?" + dojo.formToQuery("filter_new_form") + "&savemode=test";
+			const query = "backend.php?" + dojo.formToQuery("filter_new_form") + "&savemode=test";
 
 			editFilterTest(query);
 		},
@@ -969,13 +954,13 @@ function quickAddFilter() {
 			});
 		},
 		editRule: function(e) {
-			var li = e.parentNode;
-			var rule = li.getElementsByTagName("INPUT")[1].value;
+			const li = e.parentNode;
+			const rule = li.getElementsByTagName("INPUT")[1].value;
 			addFilterRule(li, rule);
 		},
 		editAction: function(e) {
-			var li = e.parentNode;
-			var action = li.getElementsByTagName("INPUT")[1].value;
+			const li = e.parentNode;
+			const action = li.getElementsByTagName("INPUT")[1].value;
 			addFilterAction(li, action);
 		},
 		addAction: function() { addFilterAction(); },
@@ -989,48 +974,42 @@ function quickAddFilter() {
 		execute: function() {
 			if (this.validate()) {
 
-				var query = dojo.formToQuery("filter_new_form");
+				const query = dojo.formToQuery("filter_new_form");
 
-				console.log(query);
+				xhrPost("backend.php", query, (transport) => {
+					if (inPreferences()) {
+						updateFilterList();
+					}
 
-				new Ajax.Request("backend.php", {
-					parameters: query,
-					onComplete: function (transport) {
-						if (inPreferences()) {
-							updateFilterList();
-						}
-
-						dialog.hide();
-				} });
+					dialog.hide();
+				});
 			}
 		},
 		href: query});
 
 	if (!inPreferences()) {
-		var selectedText = getSelectionText();
+		const selectedText = getSelectionText();
 
 		var lh = dojo.connect(dialog, "onLoad", function(){
 			dojo.disconnect(lh);
 
 			if (selectedText != "") {
 
-				var feed_id = activeFeedIsCat() ? 'CAT:' + parseInt(getActiveFeedId()) :
+				const feed_id = activeFeedIsCat() ? 'CAT:' + parseInt(getActiveFeedId()) :
 					getActiveFeedId();
 
-				var rule = { reg_exp: selectedText, feed_id: [feed_id], filter_type: 1 };
+				const rule = { reg_exp: selectedText, feed_id: [feed_id], filter_type: 1 };
 
 				addFilterRule(null, dojo.toJson(rule));
 
 			} else {
 
-				var query = "op=rpc&method=getlinktitlebyid&id=" + getActiveArticleId();
+				const query = { op: "rpc", method: "getlinktitlebyid", id: getActiveArticleId() };
 
-				new Ajax.Request("backend.php", {
-				parameters: query,
-				onComplete: function(transport) {
-					var reply = JSON.parse(transport.responseText);
+				xhrPost("backend.php", query, (transport) => {
+					const reply = JSON.parse(transport.responseText);
 
-					var title = false;
+					let title = false;
 
 					if (reply && reply.title) title = reply.title;
 
@@ -1038,18 +1017,15 @@ function quickAddFilter() {
 
 						console.log(title + " " + getActiveFeedId());
 
-						var feed_id = activeFeedIsCat() ? 'CAT:' + parseInt(getActiveFeedId()) :
+						const feed_id = activeFeedIsCat() ? 'CAT:' + parseInt(getActiveFeedId()) :
 							getActiveFeedId();
 
-						var rule = { reg_exp: title, feed_id: [feed_id], filter_type: 1 };
+						const rule = { reg_exp: title, feed_id: [feed_id], filter_type: 1 };
 
 						addFilterRule(null, dojo.toJson(rule));
 					}
-
-				} });
-
+				});
 			}
-
 		});
 	}
 
@@ -1059,29 +1035,25 @@ function quickAddFilter() {
 
 function unsubscribeFeed(feed_id, title) {
 
-	var msg = __("Unsubscribe from %s?").replace("%s", title);
+	const msg = __("Unsubscribe from %s?").replace("%s", title);
 
 	if (title == undefined || confirm(msg)) {
 		notify_progress("Removing feed...");
 
-		var query = "?op=pref-feeds&quiet=1&method=remove&ids=" + feed_id;
+		const query = { op: "pref-feeds", quiet: 1, method: "remove", ids: feed_id };
 
-		new Ajax.Request("backend.php", {
-			parameters: query,
-			onComplete: function(transport) {
+		xhrPost("backend.php", query, (transport) => {
+			if (dijit.byId("feedEditDlg")) dijit.byId("feedEditDlg").hide();
 
-					if (dijit.byId("feedEditDlg")) dijit.byId("feedEditDlg").hide();
+			if (inPreferences()) {
+				updateFeedList();
+			} else {
+				if (feed_id == getActiveFeedId())
+					setTimeout(function() { viewfeed({feed:-5}) }, 100);
 
-					if (inPreferences()) {
-						updateFeedList();
-					} else {
-						if (feed_id == getActiveFeedId())
-							setTimeout(function() { viewfeed({feed:-5}) }, 100);
-
-						if (feed_id < 0) updateFeedList();
-					}
-
-				} });
+				if (feed_id < 0) updateFeedList();
+			}
+		});
 	}
 
 	return false;
@@ -1090,21 +1062,14 @@ function unsubscribeFeed(feed_id, title) {
 
 function backend_sanity_check_callback(transport) {
 
-	if (sanity_check_done) {
-		fatalError(11, "Sanity check request received twice. This can indicate "+
-		  "presence of Firebug or some other disrupting extension. "+
-			"Please disable it and try again.");
-		return;
-	}
-
-	var reply = JSON.parse(transport.responseText);
+	const reply = JSON.parse(transport.responseText);
 
 	if (!reply) {
 		fatalError(3, "Sanity check: invalid RPC reply", transport.responseText);
 		return;
 	}
 
-	var error_code = reply['error']['code'];
+	const error_code = reply['error']['code'];
 
 	if (error_code && error_code != 0) {
 		return fatalError(error_code, reply['error']['message']);
@@ -1112,14 +1077,31 @@ function backend_sanity_check_callback(transport) {
 
 	console.log("sanity check ok");
 
-	var params = reply['init-params'];
+	const params = reply['init-params'];
 
 	if (params) {
 		console.log('reading init-params...');
 
-		for (var k in params) {
-			console.log("IP: " + k + " => " + JSON.stringify(params[k]));
-			if (k == "label_base_index") _label_base_index = parseInt(params[k]);
+		for (const k in params) {
+			switch (k) {
+				case "label_base_index":
+					_label_base_index = parseInt(params[k])
+					break;
+				case "hotkeys":
+					// filter mnemonic definitions (used for help panel) from hotkeys map
+					// i.e. *(191)|Ctrl-/ -> *(191)
+
+					const tmp = [];
+					for (const sequence in params[k][1]) {
+						const filtered = sequence.replace(/\|.*$/, "");
+						tmp[filtered] = params[k][1][sequence];
+					}
+
+					params[k][1] = tmp;
+					break;
+			}
+
+			console.log("IP:", k, "=>", params[k]);
 		}
 
 		init_params = params;
@@ -1128,65 +1110,54 @@ function backend_sanity_check_callback(transport) {
 		window.PluginHost && PluginHost.run(PluginHost.HOOK_PARAMS_LOADED, init_params);
 	}
 
-	sanity_check_done = true;
-
 	init_second_stage();
-
 }
 
 function genUrlChangeKey(feed, is_cat) {
-	var ok = confirm(__("Generate new syndication address for this feed?"));
-
-	if (ok) {
+	if (confirm(__("Generate new syndication address for this feed?"))) {
 
 		notify_progress("Trying to change address...", true);
 
-		var query = "?op=pref-feeds&method=regenFeedKey&id=" + param_escape(feed) +
-			"&is_cat=" + param_escape(is_cat);
+		const query = { op: "pref-feeds", method: "regenFeedKey", id: feed, is_cat: is_cat };
 
-		new Ajax.Request("backend.php", {
-			parameters: query,
-			onComplete: function(transport) {
-					var reply = JSON.parse(transport.responseText);
-					var new_link = reply.link;
+		xhrJson("backend.php", query, (reply) => {
+			const new_link = reply.link;
+			const e = $('gen_feed_url');
 
-					var e = $('gen_feed_url');
+			if (new_link) {
+				e.innerHTML = e.innerHTML.replace(/\&amp;key=.*$/,
+					"&amp;key=" + new_link);
 
-					if (new_link) {
+				e.href = e.href.replace(/\&key=.*$/,
+					"&key=" + new_link);
 
-						e.innerHTML = e.innerHTML.replace(/\&amp;key=.*$/,
-							"&amp;key=" + new_link);
+				new Effect.Highlight(e);
 
-						e.href = e.href.replace(/\&key=.*$/,
-							"&key=" + new_link);
+				notify('');
 
-						new Effect.Highlight(e);
-
-						notify('');
-
-					} else {
-						notify_error("Could not change feed URL.");
-					}
-			} });
+			} else {
+				notify_error("Could not change feed URL.");
+			}
+		});
 	}
 	return false;
 }
 
 // mode = all, none, invert
 function selectTableRows(id, mode) {
-	var rows = $(id).rows;
+	const rows = $(id).rows;
 
-	for (var i = 0; i < rows.length; i++) {
-		var row = rows[i];
-		var cb = false;
-		var dcb = false;
+	for (let i = 0; i < rows.length; i++) {
+		const row = rows[i];
+		let cb = false;
+		let dcb = false;
 
 		if (row.id && row.className) {
-			var bare_id = row.id.replace(/^[A-Z]*?-/, "");
-			var inputs = rows[i].getElementsByTagName("input");
+			const bare_id = row.id.replace(/^[A-Z]*?-/, "");
+			const inputs = rows[i].getElementsByTagName("input");
 
-			for (var j = 0; j < inputs.length; j++) {
-				var input = inputs[j];
+			for (let j = 0; j < inputs.length; j++) {
+				const input = inputs[j];
 
 				if (input.getAttribute("type") == "checkbox" &&
 						input.id.match(bare_id)) {
@@ -1198,7 +1169,7 @@ function selectTableRows(id, mode) {
 			}
 
 			if (cb || dcb) {
-				var issel = row.hasClassName("Selected");
+				const issel = row.hasClassName("Selected");
 
 				if (mode == "all" && !issel) {
 					row.addClassName("Selected");
@@ -1228,13 +1199,13 @@ function selectTableRows(id, mode) {
 }
 
 function getSelectedTableRowIds(id) {
-	var rows = [];
+	const rows = [];
 
-	var elem_rows = $(id).rows;
+	const elem_rows = $(id).rows;
 
-	for (var i = 0; i < elem_rows.length; i++) {
+	for (let i = 0; i < elem_rows.length; i++) {
 		if (elem_rows[i].hasClassName("Selected")) {
-			var bare_id = elem_rows[i].id.replace(/^[A-Z]*?-/, "");
+			const bare_id = elem_rows[i].id.replace(/^[A-Z]*?-/, "");
 			rows.push(bare_id);
 		}
 	}
@@ -1246,7 +1217,7 @@ function editFeed(feed) {
 	if (feed <= 0)
 		return alert(__("You can't edit this kind of feed."));
 
-	var query = "backend.php?op=pref-feeds&method=editfeed&id=" +
+	const query = "backend.php?op=pref-feeds&method=editfeed&id=" +
 		param_escape(feed);
 
 	console.log(query);
@@ -1257,23 +1228,19 @@ function editFeed(feed) {
 	if (dijit.byId("feedEditDlg"))
 		dijit.byId("feedEditDlg").destroyRecursive();
 
-	var dialog = new dijit.Dialog({
+	const dialog = new dijit.Dialog({
 		id: "feedEditDlg",
 		title: __("Edit Feed"),
 		style: "width: 600px",
 		execute: function() {
 			if (this.validate()) {
-//					console.log(dojo.objectToQuery(this.attr('value')));
-
 				notify_progress("Saving data...", true);
 
-				new Ajax.Request("backend.php", {
-					parameters: dojo.objectToQuery(dialog.attr('value')),
-					onComplete: function(transport) {
-						dialog.hide();
-						notify('');
-						updateFeedList();
-				}});
+				xhrPost("backend.php", dialog.attr('value'), (transport) => {
+					dialog.hide();
+					notify('');
+					updateFeedList();
+				});
 			}
 		},
 		href: query});
@@ -1282,7 +1249,7 @@ function editFeed(feed) {
 }
 
 function feedBrowser() {
-	var query = "backend.php?op=feeds&method=feedBrowser";
+	const query = "backend.php?op=feeds&method=feedBrowser";
 
 	if (dijit.byId("feedAddDlg"))
 		dijit.byId("feedAddDlg").hide();
@@ -1290,16 +1257,16 @@ function feedBrowser() {
 	if (dijit.byId("feedBrowserDlg"))
 		dijit.byId("feedBrowserDlg").destroyRecursive();
 
-	var dialog = new dijit.Dialog({
+	const dialog = new dijit.Dialog({
 		id: "feedBrowserDlg",
 		title: __("More Feeds"),
 		style: "width: 600px",
 		getSelectedFeedIds: function () {
-			var list = $$("#browseFeedList li[id*=FBROW]");
-			var selected = new Array();
+			const list = $$("#browseFeedList li[id*=FBROW]");
+			const selected = [];
 
 			list.each(function (child) {
-				var id = child.id.replace("FBROW-", "");
+				const id = child.id.replace("FBROW-", "");
 
 				if (child.hasClassName('Selected')) {
 					selected.push(id);
@@ -1309,12 +1276,12 @@ function feedBrowser() {
 			return selected;
 		},
 		getSelectedFeeds: function () {
-			var list = $$("#browseFeedList li.Selected");
-			var selected = new Array();
+			const list = $$("#browseFeedList li.Selected");
+			const selected = [];
 
 			list.each(function (child) {
-				var title = child.getElementsBySelector("span.fb_feedTitle")[0].innerHTML;
-				var url = child.getElementsBySelector("a.fb_feedUrl")[0].href;
+				const title = child.getElementsBySelector("span.fb_feedTitle")[0].innerHTML;
+				const url = child.getElementsBySelector("a.fb_feedUrl")[0].href;
 
 				selected.push([title, url]);
 
@@ -1324,8 +1291,8 @@ function feedBrowser() {
 		},
 
 		subscribe: function () {
-			var mode = this.attr('value').mode;
-			var selected = [];
+			const mode = this.attr('value').mode;
+			let selected = [];
 
 			if (mode == "1")
 				selected = this.getSelectedFeeds();
@@ -1337,20 +1304,12 @@ function feedBrowser() {
 
 				notify_progress("Loading, please wait...", true);
 
-				// we use dojo.toJson instead of JSON.stringify because
-				// it somehow escapes everything TWICE, at least in Chrome 9
+				const query = { op: "rpc", method: "massSubscribe",
+					payload: JSON.stringify(selected), mode: mode };
 
-				var query = "?op=rpc&method=massSubscribe&payload=" +
-					param_escape(dojo.toJson(selected)) + "&mode=" + param_escape(mode);
-
-				console.log(query);
-
-				new Ajax.Request("backend.php", {
-					parameters: query,
-					onComplete: function (transport) {
-						notify('');
-						updateFeedList();
-					}
+				xhrPost("backend.php", query, () => {
+					notify('');
+					updateFeedList();
 				});
 
 			} else {
@@ -1359,58 +1318,43 @@ function feedBrowser() {
 
 		},
 		update: function () {
-			var query = dojo.objectToQuery(dialog.attr('value'));
-
 			Element.show('feed_browser_spinner');
 
-			new Ajax.Request("backend.php", {
-				parameters: query,
-				onComplete: function (transport) {
-					notify('');
+			xhrPost("backend.php", dialog.attr("value"), (transport) => {
+				notify('');
 
-					Element.hide('feed_browser_spinner');
+				Element.hide('feed_browser_spinner');
 
-					var c = $("browseFeedList");
+				const reply = JSON.parse(transport.responseText);
+				const mode = reply['mode'];
 
-					var reply = JSON.parse(transport.responseText);
+				if ($("browseFeedList") && reply['content']) {
+					$("browseFeedList").innerHTML = reply['content'];
+				}
 
-					var r = reply['content'];
-					var mode = reply['mode'];
+				dojo.parser.parse("browseFeedList");
 
-					if (c && r) {
-						c.innerHTML = r;
-					}
-
-					dojo.parser.parse("browseFeedList");
-
-					if (mode == 2) {
-						Element.show(dijit.byId('feed_archive_remove').domNode);
-					} else {
-						Element.hide(dijit.byId('feed_archive_remove').domNode);
-					}
-
+				if (mode == 2) {
+					Element.show(dijit.byId('feed_archive_remove').domNode);
+				} else {
+					Element.hide(dijit.byId('feed_archive_remove').domNode);
 				}
 			});
 		},
 		removeFromArchive: function () {
-			var selected = this.getSelectedFeedIds();
+			const selected = this.getSelectedFeedIds();
 
 			if (selected.length > 0) {
 
-				var pr = __("Remove selected feeds from the archive? Feeds with stored articles will not be removed.");
+				const pr = __("Remove selected feeds from the archive? Feeds with stored articles will not be removed.");
 
 				if (confirm(pr)) {
 					Element.show('feed_browser_spinner');
 
-					var query = "?op=rpc&method=remarchive&ids=" +
-						param_escape(selected.toString());
-					;
+					const query = { op: "rpc", method: "remarchive", ids: selected.toString() };
 
-					new Ajax.Request("backend.php", {
-						parameters: query,
-						onComplete: function (transport) {
-							dialog.update();
-						}
+					xhrPost("backend.php", query, () => {
+						dialog.update();
 					});
 				}
 			}
@@ -1427,12 +1371,12 @@ function feedBrowser() {
 }
 
 function showFeedsWithErrors() {
-	var query = "backend.php?op=pref-feeds&method=feedsWithErrors";
+	const query = "backend.php?op=pref-feeds&method=feedsWithErrors";
 
 	if (dijit.byId("errorFeedsDlg"))
 		dijit.byId("errorFeedsDlg").destroyRecursive();
 
-	var dialog = new dijit.Dialog({
+	const dialog = new dijit.Dialog({
 		id: "errorFeedsDlg",
 		title: __("Feeds with update errors"),
 		style: "width: 600px",
@@ -1440,26 +1384,20 @@ function showFeedsWithErrors() {
 			return getSelectedTableRowIds("prefErrorFeedList");
 		},
 		removeSelected: function() {
-			var sel_rows = this.getSelectedFeeds();
-
-			console.log(sel_rows);
+			const sel_rows = this.getSelectedFeeds();
 
 			if (sel_rows.length > 0) {
-				var ok = confirm(__("Remove selected feeds?"));
-
-				if (ok) {
+				if (confirm(__("Remove selected feeds?"))) {
 					notify_progress("Removing selected feeds...", true);
 
-					var query = "?op=pref-feeds&method=remove&ids="+
-						param_escape(sel_rows.toString());
+					const query = { op: "pref-feeds", method: "remove",
+						ids: sel_rows.toString() };
 
-					new Ajax.Request("backend.php",	{
-						parameters: query,
-						onComplete: function(transport) {
-							notify('');
-							dialog.hide();
-							updateFeedList();
-						} });
+					xhrPost("backend.php",	query, () => {
+						notify('');
+						dialog.hide();
+						updateFeedList();
+					});
 				}
 
 			} else {
@@ -1468,6 +1406,7 @@ function showFeedsWithErrors() {
 		},
 		execute: function() {
 			if (this.validate()) {
+				//
 			}
 		},
 		href: query});
@@ -1476,17 +1415,17 @@ function showFeedsWithErrors() {
 }
 
 function get_timestamp() {
-	var date = new Date();
+	const date = new Date();
 	return Math.round(date.getTime() / 1000);
 }
 
 function helpDialog(topic) {
-	var query = "backend.php?op=backend&method=help&topic=" + param_escape(topic);
+	const query = "backend.php?op=backend&method=help&topic=" + param_escape(topic);
 
 	if (dijit.byId("helpDlg"))
 		dijit.byId("helpDlg").destroyRecursive();
 
-	var dialog = new dijit.Dialog({
+	const dialog = new dijit.Dialog({
 		id: "helpDlg",
 		title: __("Help"),
 		style: "width: 600px",
@@ -1495,70 +1434,6 @@ function helpDialog(topic) {
 
 	dialog.show();
 }
-
-function htmlspecialchars_decode (string, quote_style) {
-  // http://kevin.vanzonneveld.net
-  // +   original by: Mirek Slugen
-  // +   improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
-  // +   bugfixed by: Mateusz "loonquawl" Zalega
-  // +      input by: ReverseSyntax
-  // +      input by: Slawomir Kaniecki
-  // +      input by: Scott Cariss
-  // +      input by: Francois
-  // +   bugfixed by: Onno Marsman
-  // +    revised by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
-  // +   bugfixed by: Brett Zamir (http://brett-zamir.me)
-  // +      input by: Ratheous
-  // +      input by: Mailfaker (http://www.weedem.fr/)
-  // +      reimplemented by: Brett Zamir (http://brett-zamir.me)
-  // +    bugfixed by: Brett Zamir (http://brett-zamir.me)
-  // *     example 1: htmlspecialchars_decode("<p>this -&gt; &quot;</p>", 'ENT_NOQUOTES');
-  // *     returns 1: '<p>this -> &quot;</p>'
-  // *     example 2: htmlspecialchars_decode("&amp;quot;");
-  // *     returns 2: '&quot;'
-  var optTemp = 0,
-    i = 0,
-    noquotes = false;
-  if (typeof quote_style === 'undefined') {
-    quote_style = 2;
-  }
-  string = string.toString().replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-  var OPTS = {
-    'ENT_NOQUOTES': 0,
-    'ENT_HTML_QUOTE_SINGLE': 1,
-    'ENT_HTML_QUOTE_DOUBLE': 2,
-    'ENT_COMPAT': 2,
-    'ENT_QUOTES': 3,
-    'ENT_IGNORE': 4
-  };
-  if (quote_style === 0) {
-    noquotes = true;
-  }
-  if (typeof quote_style !== 'number') { // Allow for a single string or an array of string flags
-    quote_style = [].concat(quote_style);
-    for (i = 0; i < quote_style.length; i++) {
-      // Resolve string input to bitwise e.g. 'PATHINFO_EXTENSION' becomes 4
-      if (OPTS[quote_style[i]] === 0) {
-        noquotes = true;
-      } else if (OPTS[quote_style[i]]) {
-        optTemp = optTemp | OPTS[quote_style[i]];
-      }
-    }
-    quote_style = optTemp;
-  }
-  if (quote_style & OPTS.ENT_HTML_QUOTE_SINGLE) {
-    string = string.replace(/&#0*39;/g, "'"); // PHP doesn't currently escape if more than one 0, but it should
-    // string = string.replace(/&apos;|&#x0*27;/g, "'"); // This would also be useful here, but not a part of PHP
-  }
-  if (!noquotes) {
-    string = string.replace(/&quot;/g, '"');
-  }
-  // Put this in last place to avoid escape being double-decoded
-  string = string.replace(/&amp;/g, '&');
-
-  return string;
-}
-
 
 function label_to_feed_id(label) {
 	return _label_base_index - 1 - Math.abs(label);
@@ -1571,13 +1446,13 @@ function feed_to_label_id(feed) {
 // http://stackoverflow.com/questions/6251937/how-to-get-selecteduser-highlighted-text-in-contenteditable-element-and-replac
 
 function getSelectionText() {
-	var text = "";
+	let text = "";
 
 	if (typeof window.getSelection != "undefined") {
-		var sel = window.getSelection();
+		const sel = window.getSelection();
 		if (sel.rangeCount) {
-			var container = document.createElement("div");
-			for (var i = 0, len = sel.rangeCount; i < len; ++i) {
+			const container = document.createElement("div");
+			for (let i = 0, len = sel.rangeCount; i < len; ++i) {
 				container.appendChild(sel.getRangeAt(i).cloneContents());
 			}
 			text = container.innerHTML;
@@ -1592,16 +1467,71 @@ function getSelectionText() {
 }
 
 function openUrlPopup(url) {
-	var w = window.open("");
+	const w = window.open("");
 
 	w.opener = null;
 	w.location = url;
 }
 function openArticlePopup(id) {
-	var w = window.open("",
+	const w = window.open("",
 		"ttrss_article_popup",
 		"height=900,width=900,resizable=yes,status=no,location=no,menubar=no,directories=no,scrollbars=yes,toolbar=no");
 
 	w.opener = null;
 	w.location = "backend.php?op=article&method=view&mode=raw&html=1&zoom=1&id=" + id + "&csrf_token=" + getInitParam("csrf_token");
+}
+
+function keyevent_to_action(e) {
+
+	const hotkeys_map = getInitParam("hotkeys");
+	const keycode = e.which;
+	const keychar = String.fromCharCode(keycode).toLowerCase();
+
+	if (keycode == 27) { // escape and drop prefix
+		hotkey_prefix = false;
+	}
+
+	if (keycode == 16 || keycode == 17) return; // ignore lone shift / ctrl
+
+	if (!hotkey_prefix && hotkeys_map[0].indexOf(keychar) != -1) {
+
+		const date = new Date();
+		const ts = Math.round(date.getTime() / 1000);
+
+		hotkey_prefix = keychar;
+		hotkey_prefix_pressed = ts;
+
+		$("cmdline").innerHTML = keychar;
+		Element.show("cmdline");
+
+		e.stopPropagation();
+
+		return false;
+	}
+
+	Element.hide("cmdline");
+
+	let hotkey_name = keychar.search(/[a-zA-Z0-9]/) != -1 ? keychar : "(" + keycode + ")";
+
+	// ensure ^*char notation
+	if (e.shiftKey) hotkey_name = "*" + hotkey_name;
+	if (e.ctrlKey) hotkey_name = "^" + hotkey_name;
+	if (e.altKey) hotkey_name = "+" + hotkey_name;
+	if (e.metaKey) hotkey_name = "%" + hotkey_name;
+
+	const hotkey_full = hotkey_prefix ? hotkey_prefix + " " + hotkey_name : hotkey_name;
+	hotkey_prefix = false;
+
+	let action_name = false;
+
+	for (const sequence in hotkeys_map[1]) {
+		if (sequence == hotkey_full) {
+			action_name = hotkeys_map[1][sequence];
+			break;
+		}
+	}
+
+	console.log('keyevent_to_action', hotkey_full, '=>', action_name);
+
+	return action_name;
 }

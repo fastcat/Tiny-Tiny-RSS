@@ -11,8 +11,8 @@
 
 	// we need a separate check here because functions.php might get parsed
 	// incorrectly before 5.3 because of :: syntax.
-	if (version_compare(PHP_VERSION, '5.3.0', '<')) {
-		print "<b>Fatal Error</b>: PHP version 5.3.0 or newer required.\n";
+	if (version_compare(PHP_VERSION, '5.6.0', '<')) {
+		print "<b>Fatal Error</b>: PHP version 5.6.0 or newer required. You're using " . PHP_VERSION . ".\n";
 		exit;
 	}
 
@@ -64,7 +64,7 @@
 	<?php echo stylesheet_tag("lib/dijit/themes/claro/claro.css"); ?>
 
 	<?php if ($_SESSION["uid"]) {
-		$theme = get_pref( "USER_CSS_THEME", $_SESSION["uid"], false);
+		$theme = get_pref("USER_CSS_THEME", false, false);
 		if ($theme && theme_valid("$theme")) {
 			echo stylesheet_tag(get_theme_path($theme));
 		} else {
@@ -113,8 +113,6 @@
 		'use strict';
 		require({cache:{}});
 	<?php
-		require_once 'lib/jshrink/Minifier.php';
-
 		print get_minified_js(["tt-rss.js",
 			"functions.js", "feedlist.js", "viewfeed.js", "PluginHost.js"]);
 	?>
@@ -247,15 +245,12 @@
 					<div dojoType="dijit.MenuItem" disabled="1"><?php echo __('Feed actions:') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcAddFeed')"><?php echo __('Subscribe to feed...') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcEditFeed')"><?php echo __('Edit this feed...') ?></div>
-					<!-- <div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcRescoreFeed')"><?php echo __('Rescore feed') ?></div> -->
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcRemoveFeed')"><?php echo __('Unsubscribe') ?></div>
 					<div dojoType="dijit.MenuItem" disabled="1"><?php echo __('All feeds:') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcCatchupAll')"><?php echo __('Mark as read') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcShowOnlyUnread')"><?php echo __('(Un)hide read feeds') ?></div>
 					<div dojoType="dijit.MenuItem" disabled="1"><?php echo __('Other actions:') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcToggleWidescreen')"><?php echo __('Toggle widescreen mode') ?></div>
-					<!-- <div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcAddLabel')"><?php echo __('Create label...') ?></div>
-					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcAddFilter')"><?php echo __('Create filter...') ?></div> -->
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcHKhelp')"><?php echo __('Keyboard shortcuts help') ?></div>
 
 					<?php

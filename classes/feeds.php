@@ -173,7 +173,7 @@ class Feeds extends Handler_Protected {
 		$method_split = explode(":", $method);
 
 		if ($method == "ForceUpdate" && $feed > 0 && is_numeric($feed)) {
-            $sth = $this->pdo->prepare("UPDATE ttrss_feeds 
+            $sth = $this->pdo->prepare("UPDATE ttrss_feeds
                             SET last_updated = '1970-01-01', last_update_started = '1970-01-01'
                             WHERE id = ?");
             $sth->execute([$feed]);
@@ -277,7 +277,6 @@ class Feeds extends Handler_Protected {
         $lnum = $offset;
         $num_unread = 0;
         if ($_REQUEST["debug"]) $timing_info = print_checkpoint("PS", $timing_info);
-        $expand_cdm = get_pref('CDM_EXPANDED');
 
         if (is_object($result)) {
 
@@ -346,7 +345,7 @@ class Feeds extends Handler_Protected {
 
 				$score_pic = "images/" . get_score_pic($score);
 
-				$score_pic = "<img class='hlScorePic' score='$score' onclick='changeScore($id, this)' src=\"$score_pic\"
+				$score_pic = "<img class='score-pic' score='$score' onclick='changeScore($id, this)' src=\"$score_pic\"
                 title=\"$score\">";
 
 				if ($score > 500) {
@@ -363,9 +362,7 @@ class Feeds extends Handler_Protected {
 					$entry_author = " &mdash; $entry_author";
 				}
 
-				$has_feed_icon = feeds::feedHasIcon($feed_id);
-
-				if ($has_feed_icon) {
+				if (feeds::feedHasIcon($feed_id)) {
 					$feed_icon_img = "<img class=\"tinyFeedIcon\" src=\"".ICONS_URL."/$feed_id.ico\" alt=\"\">";
 				} else {
 					$feed_icon_img = "<img class=\"tinyFeedIcon\" src=\"images/pub_set.png\" alt=\"\">";
@@ -393,7 +390,7 @@ class Feeds extends Handler_Protected {
 
 							$vf_catchup_link = "<a class='catchup' onclick='catchupFeedInGroup($feed_id);' href='#'>".__('mark feed as read')."</a>";
 
-							$reply['content'] .= "<div data-feed-id='$feed_id' id='FTITLE-$feed_id' class='cdmFeedTitle'>".
+							$reply['content'] .= "<div data-feed-id='$feed_id' class='feed-titl'>".
 								"<div style='float : right'>$feed_icon_img</div>".
 								"<a class='title' href=\"#\" onclick=\"viewfeed({feed:$feed_id})\">".
 								$line["feed_title"]."</a>
@@ -417,8 +414,8 @@ class Feeds extends Handler_Protected {
 					$reply['content'] .= "</div>";
 
 					$reply['content'] .= "<div onclick='return hlClicked(event, $id)'
-                    class=\"hlTitle\"><span class='hlContent $hlc_suffix'>";
-					$reply['content'] .= "<a id=\"RTITLE-$id\" class=\"title $hlc_suffix\"
+                    class=\"title\"><span class='hlContent $hlc_suffix'>";
+					$reply['content'] .= "<a class=\"title $hlc_suffix\"
                     href=\"" . htmlspecialchars($line["link"]) . "\"
                     onclick=\"\">" .
 						truncate_string($line["title"], 200);
@@ -437,7 +434,7 @@ class Feeds extends Handler_Protected {
 						if (@$line["feed_title"]) {
 							$rgba = @$rgba_cache[$feed_id];
 
-							$reply['content'] .= "<span class=\"hlFeed\"><a style=\"background : rgba($rgba, 0.3)\" href=\"#\" onclick=\"viewfeed({feed:$feed_id})\">".
+							$reply['content'] .= "<span class=\"feed\"><a style=\"background : rgba($rgba, 0.3)\" href=\"#\" onclick=\"viewfeed({feed:$feed_id})\">".
 								truncate_string($line["feed_title"],30)."</a></span>";
 						}
 					}
@@ -477,6 +474,8 @@ class Feeds extends Handler_Protected {
 						$line = $p->hook_render_article_cdm($line);
 					}
 
+					$line['content'] = rewrite_cached_urls($line['content']);
+
 					if ($vfeed_group_enabled && $line["feed_title"]) {
 						if ($feed_id != $vgroup_last_feed) {
 
@@ -487,7 +486,7 @@ class Feeds extends Handler_Protected {
 							$feed_icon_src = Feeds::getFeedIcon($feed_id);
 							$feed_icon_img = "<img class=\"tinyFeedIcon\" src=\"$feed_icon_src\">";
 
-							$reply['content'] .= "<div data-feed-id='$feed_id' id='FTITLE-$feed_id' class='cdmFeedTitle'>".
+							$reply['content'] .= "<div data-feed-id='$feed_id' class='feed-title'>".
 								"<div style=\"float : right\">$feed_icon_img</div>".
 								"<a href=\"#\" class='title' onclick=\"viewfeed({feed:$feed_id})\">".
 								$line["feed_title"]."</a> $vf_catchup_link</div>";
@@ -495,12 +494,12 @@ class Feeds extends Handler_Protected {
 						}
 					}
 
-					$expanded_class = $expand_cdm ? "expanded" : "expandable";
+                    $content_encoded = htmlspecialchars($line["content"]);
 
-					$tmp_content = "<div class=\"cdm $hlc_suffix $expanded_class $class\"
-                    id=\"RROW-$id\" data-article-id='$id' data-orig-feed-id='$feed_id' $mouseover_attrs>";
+                    $tmp_content = "<div class=\"cdm expanded $hlc_suffix $class\"
+                        id=\"RROW-$id\" data-content=\"$content_encoded\" data-article-id='$id' data-orig-feed-id='$feed_id' $mouseover_attrs>";
 
-					$tmp_content .= "<div class=\"cdmHeader\">";
+					$tmp_content .= "<div class=\"header\">";
 					$tmp_content .= "<div style=\"vertical-align : middle\">";
 
 					$tmp_content .= "<input dojoType=\"dijit.form.CheckBox\"
@@ -522,10 +521,10 @@ class Feeds extends Handler_Protected {
 					}
 
 					// data-article-id included for context menu
-					$tmp_content .= "<span id=\"RTITLE-$id\"
+					$tmp_content .= "<span
                     onclick=\"return cdmClicked(event, $id);\"
                     data-article-id=\"$id\"
-                    class=\"titleWrap hlMenuAttach $hlc_suffix\">						
+                    class=\"titleWrap hlMenuAttach $hlc_suffix\">
                     <a class=\"title $hlc_suffix\"
                     title=\"".htmlspecialchars($line["title"])."\"
                     target=\"_blank\" rel=\"noopener noreferrer\" href=\"".
@@ -535,24 +534,13 @@ class Feeds extends Handler_Protected {
 
 					$tmp_content .= $labels_str;
 
-					$tmp_content .= "<span class='collapseBtn' style='display : none'>
-                    <img src=\"images/collapse.png\" onclick=\"cdmCollapseArticle(event, $id)\"
-                    title=\"".__("Collapse article")."\"/></span>";
-
-					if (!$expand_cdm)
-						$content_hidden = "style=\"display : none\"";
-					else
-						$excerpt_hidden = "style=\"display : none\"";
-
-					$tmp_content .= "<span $excerpt_hidden id=\"CEXC-$id\" class=\"cdmExcerpt\">" . $content_preview . "</span>";
-
 					$tmp_content .= "</span>";
 
 					if (!$vfeed_group_enabled) {
 						if (@$line["feed_title"]) {
 							$rgba = @$rgba_cache[$feed_id];
 
-							$tmp_content .= "<div class=\"hlFeed\">
+							$tmp_content .= "<div class=\"feed\">
                             <a href=\"#\" style=\"background-color: rgba($rgba,0.3)\"
                             onclick=\"viewfeed({feed:$feed_id})\">".
 								truncate_string($line["feed_title"],30)."</a>
@@ -562,7 +550,7 @@ class Feeds extends Handler_Protected {
 
 					$tmp_content .= "<span class='updated' title='$date_entered_fmt'>$updated_fmt</span>";
 
-					$tmp_content .= "<div class='scoreWrap' style=\"vertical-align : middle\">";
+					$tmp_content .= "<div style=\"vertical-align : middle\">";
 					$tmp_content .= "$score_pic";
 
 					if (!get_pref("VFEED_GROUP_BY_FEED") && $line["feed_title"]) {
@@ -570,13 +558,11 @@ class Feeds extends Handler_Protected {
                         title=\"".htmlspecialchars($line["feed_title"])."\"
                         onclick=\"viewfeed({feed:$feed_id})\">$feed_icon_img</span>";
 					}
-					$tmp_content .= "</div>"; //scoreWrap
+					$tmp_content .= "</div>"; //score wrapper2
 
-					$tmp_content .= "</div>"; //cdmHeader
+					$tmp_content .= "</div>"; //header
 
-					$tmp_content .= "<div class=\"cdmContent\" $content_hidden
-                    onclick=\"return cdmClicked(event, $id, true);\"
-                    id=\"CICD-$id\">";
+					$tmp_content .= "<div class=\"content\" onclick=\"return cdmClicked(event, $id, true);\">";
 
 					$tmp_content .= "<div id=\"POSTNOTE-$id\">";
 					if ($line['note']) {
@@ -586,7 +572,8 @@ class Feeds extends Handler_Protected {
 
 					if (!$line['lang']) $line['lang'] = 'en';
 
-					$tmp_content .= "<div class=\"cdmContentInner\" lang=\"".$line['lang']."\">";
+					// this is filled from RROW data-content
+					$tmp_content .= "<div class=\"content-inner\" lang=\"".$line['lang']."\">";
 
 					if ($line["orig_feed_id"]) {
 
@@ -614,15 +601,8 @@ class Feeds extends Handler_Protected {
 						}
 					}
 
-					$tmp_content .= "<span id=\"CWRAP-$id\">";
-					$tmp_content .= "<span id=\"CENCW-$id\" class=\"cencw\" style=\"display : none\">";
-					$tmp_content .= htmlspecialchars($line["content"]);
-					$tmp_content .= "</span>";
-					$tmp_content .= "</span>";
-
-					$tmp_content .= "</div>"; //cdmContentInner
-
-					$tmp_content .= "<div class=\"cdmIntermediate\">";
+					$tmp_content .= "</div>"; //content-inner
+					$tmp_content .= "<div class=\"intermediate\">";
 
 					$always_display_enclosures = $line["always_display_enclosures"];
 					$tmp_content .= Article::format_article_enclosures($id, $always_display_enclosures,
@@ -630,7 +610,7 @@ class Feeds extends Handler_Protected {
 
 					$tmp_content .= "</div>"; // cdmIntermediate
 
-					$tmp_content .= "<div class=\"cdmFooter\" onclick=\"cdmFooterClick(event)\">";
+					$tmp_content .= "<div class=\"footer\" onclick=\"event.stopPropagation()\">";
 
 					foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_ARTICLE_LEFT_BUTTON) as $p) {
 						$tmp_content .= $p->hook_article_left_button($line);
@@ -675,7 +655,7 @@ class Feeds extends Handler_Protected {
 
 					$tmp_content .= "</div>"; // buttons
 
-					$tmp_content .= "</div>"; // cdmFooter
+					$tmp_content .= "</div>"; // cdm footer
 					$tmp_content .= "</div>"; // cdmContent
 					$tmp_content .= "</div>"; // RROW.cdm
 
@@ -1132,6 +1112,9 @@ class Feeds extends Handler_Protected {
 	function update_debugger() {
 		header("Content-type: text/html");
 
+		Debug::set_enabled(true);
+		Debug::set_loglevel($_REQUEST["xdebug"]);
+
 		$feed_id = (int)$_REQUEST["feed_id"];
 		@$do_update = $_REQUEST["action"] == "do_update";
 		$csrf_token = $_REQUEST["csrf_token"];
@@ -1466,16 +1449,16 @@ class Feeds extends Handler_Protected {
 
 		$contents = @fetch_file_contents($url, false, $auth_login, $auth_pass);
 
+		foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_SUBSCRIBE_FEED) as $plugin) {
+			$contents = $plugin->hook_subscribe_feed($contents, $url, $auth_login, $auth_pass);
+		}
+
 		if (!$contents) {
 			if (preg_match("/cloudflare\.com/", $fetch_last_error_content)) {
 				$fetch_last_error .= " (feed behind Cloudflare)";
 			}
 
 			return array("code" => 5, "message" => $fetch_last_error);
-		}
-
-		foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_SUBSCRIBE_FEED) as $plugin) {
-			$contents = $plugin->hook_subscribe_feed($contents, $url, $auth_login, $auth_pass);
 		}
 
 		if (is_html($contents)) {

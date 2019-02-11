@@ -48,7 +48,7 @@ class Pref_Prefs extends Handler_Protected {
 			"SHOW_CONTENT_PREVIEW" => array(__("Show content preview in headlines list"), ""),
 			"SORT_HEADLINES_BY_FEED_DATE" => array(__("Sort headlines by feed date"), __("Use feed-specified date to sort headlines instead of local import date.")),
 			"SSL_CERT_SERIAL" => array(__("Login with an SSL certificate"), __("Click to register your SSL client certificate with tt-rss")),
-			"STRIP_IMAGES" => array(__("Do not embed images in articles"), ""),
+			"STRIP_IMAGES" => array(__("Do not embed media in articles"), ""),
 			"STRIP_UNSAFE_TAGS" => array(__("Strip unsafe tags from articles"), __("Strip all but most common HTML tags when reading articles.")),
 			"USER_STYLESHEET" => array(__("Customize stylesheet"), __("Customize CSS stylesheet to your liking")),
 			"USER_TIMEZONE" => array(__("Time zone"), ""),
@@ -146,8 +146,8 @@ class Pref_Prefs extends Handler_Protected {
 
 		$_SESSION["prefs_op_result"] = "reset-to-defaults";
 
-		$sth = $this->pdo->query("DELETE FROM ttrss_user_prefs
-			WHERE (profile = :profile OR (:profile IS NULL AND profile IS NULL)) 
+		$sth = $this->pdo->prepare("DELETE FROM ttrss_user_prefs
+			WHERE (profile = :profile OR (:profile IS NULL AND profile IS NULL))
 				AND owner_uid = :uid");
 		$sth->execute([":profile" => $_SESSION['profile'], ":uid" => $_SESSION['uid']]);
 
@@ -162,7 +162,7 @@ class Pref_Prefs extends Handler_Protected {
 
 		$prefs_blacklist = array("ALLOW_DUPLICATE_POSTS", "STRIP_UNSAFE_TAGS", "REVERSE_HEADLINES",
 			"SORT_HEADLINES_BY_FEED_DATE", "DEFAULT_ARTICLE_LIMIT",
-			"FEEDS_SORT_BY_UNREAD");
+			"FEEDS_SORT_BY_UNREAD", "CDM_EXPANDED");
 
 		/* "FEEDS_SORT_BY_UNREAD", "HIDE_READ_FEEDS", "REVERSE_HEADLINES" */
 
@@ -848,9 +848,6 @@ class Pref_Prefs extends Handler_Protected {
 	}
 
 	function otpqrcode() {
-		require_once "lib/otphp/vendor/base32.php";
-		require_once "lib/otphp/lib/otp.php";
-		require_once "lib/otphp/lib/totp.php";
 		require_once "lib/phpqrcode/phpqrcode.php";
 
 		$sth = $this->pdo->prepare("SELECT login,salt,otp_enabled
@@ -860,7 +857,7 @@ class Pref_Prefs extends Handler_Protected {
 
 		if ($row = $sth->fetch()) {
 
-			$base32 = new Base32();
+			$base32 = new \OTPHP\Base32();
 
 			$login = $row["login"];
 			$otp_enabled = sql_bool_to_bool($row["otp_enabled"]);
@@ -876,9 +873,6 @@ class Pref_Prefs extends Handler_Protected {
 	}
 
 	function otpenable() {
-		require_once "lib/otphp/vendor/base32.php";
-		require_once "lib/otphp/lib/otp.php";
-		require_once "lib/otphp/lib/totp.php";
 
 		$password = clean($_REQUEST["password"]);
 		$otp = clean($_REQUEST["otp"]);
@@ -894,7 +888,7 @@ class Pref_Prefs extends Handler_Protected {
 
 			if ($row = $sth->fetch()) {
 
-				$base32 = new Base32();
+				$base32 = new \OTPHP\Base32();
 
 				$secret = $base32->encode(sha1($row["salt"]));
 				$topt = new \OTPHP\TOTP($secret);
@@ -902,7 +896,7 @@ class Pref_Prefs extends Handler_Protected {
 				$otp_check = $topt->now();
 
 				if ($otp == $otp_check) {
-					$sth = $this->pdo->prepare("UPDATE ttrss_users 
+					$sth = $this->pdo->prepare("UPDATE ttrss_users
 					SET otp_enabled = true WHERE id = ?");
 
 					$sth->execute([$_SESSION['uid']]);
@@ -1095,7 +1089,7 @@ class Pref_Prefs extends Handler_Protected {
 
 		print "<div class='dlgButtons'>
 			<div style='float : left'>
-			<button dojoType=\"dijit.form.Button\" onclick=\"dijit.byId('profileEditDlg').removeSelected()\">".
+			<button class=\"btn-danger\" dojoType=\"dijit.form.Button\" onclick=\"dijit.byId('profileEditDlg').removeSelected()\">".
 			__('Remove selected profiles')."</button>
 			<button dojoType=\"dijit.form.Button\" onclick=\"dijit.byId('profileEditDlg').activateProfile()\">".
 			__('Activate profile')."</button>
