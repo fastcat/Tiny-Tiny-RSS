@@ -8,11 +8,8 @@ class Opml extends Handler_Protected {
 	}
 
 	function export() {
-		$output_name = $_REQUEST["filename"];
-		if (!$output_name) $output_name = "TinyTinyRSS.opml";
-
-		$show_settings = $_REQUEST["settings"];
-
+		$output_name = "tt-rss_".date("Y-m-d").".opml";
+		$show_settings = $_REQUEST["include_settings"];
 		$owner_uid = $_SESSION["uid"];
 
 		$rc = $this->opml_export($output_name, $owner_uid, false, ($show_settings == 1));
@@ -32,7 +29,6 @@ class Opml extends Handler_Protected {
 				<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/>
 			</head>
 			<body class='claro ttrss_utility'>
-			<div class=\"floatingLogo\"><img src=\"images/logo_small.png\"></div>
 			<h1>".__('OPML Utility')."</h1><div class='content'>";
 
 		add_feed_category("Imported feeds");

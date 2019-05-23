@@ -44,7 +44,8 @@ class Af_Readability extends Plugin {
 	function hook_prefs_tab($args) {
 		if ($args != "prefFeeds") return;
 
-		print "<div dojoType=\"dijit.layout.AccordionPane\" title=\"".__('Readability settings (af_readability)')."\">";
+		print "<div dojoType=\"dijit.layout.AccordionPane\" 
+			title=\"<i class='material-icons'>extension</i> ".__('Readability settings (af_readability)')."\">";
 
 		if (version_compare(PHP_VERSION, '5.6.0', '<')) {
 			print_error("This plugin requires PHP version 5.6.");
@@ -61,7 +62,7 @@ class Af_Readability extends Plugin {
 				new Ajax.Request('backend.php', {
 					parameters: dojo.objectToQuery(this.getValues()),
 					onComplete: function(transport) {
-						notify_info(transport.responseText);
+						Notify.info(transport.responseText);
 					}
 				});
 				//this.reset();
@@ -89,12 +90,11 @@ class Af_Readability extends Plugin {
 		if (count($enabled_feeds) > 0) {
 			print "<h3>" . __("Currently enabled for (click to edit):") . "</h3>";
 
-			print "<ul class=\"browseFeedList\" style=\"border-width : 1px\">";
+			print "<ul class='panel panel-scrollable list list-unstyled'>";
 			foreach ($enabled_feeds as $f) {
 				print "<li>" .
-					"<img src='images/pub_set.png'
-						style='vertical-align : middle'> <a href='#'
-						onclick='editFeed($f)'>".
+					"<i class='material-icons'>rss_feed</i> <a href='#'
+						onclick='CommonDialogs.editFeed($f)'>".
 					Feeds::getFeedTitle($f) . "</a></li>";
 			}
 			print "</ul>";
@@ -113,9 +113,13 @@ class Af_Readability extends Plugin {
 		$key = array_search($feed_id, $enabled_feeds);
 		$checked = $key !== FALSE ? "checked" : "";
 
-		print "<hr/><input dojoType=\"dijit.form.CheckBox\" type=\"checkbox\" id=\"af_readability_enabled\"
+		print "<fieldset>";
+
+		print "<label class='checkbox'><input dojoType=\"dijit.form.CheckBox\" type=\"checkbox\" id=\"af_readability_enabled\"
 			name=\"af_readability_enabled\"
-			$checked>&nbsp;<label for=\"af_readability_enabled\">".__('Inline article content')."</label>";
+			$checked>&nbsp;".__('Inline article content')."</label>";
+
+		print "</fieldset>";
 
 		print "</div>";
 	}
@@ -148,6 +152,7 @@ class Af_Readability extends Plugin {
 	}
 
 	public function extract_content($url) {
+
 		global $fetch_effective_url;
 
 		$tmp = fetch_file_contents([
@@ -158,7 +163,7 @@ class Af_Readability extends Plugin {
 		if ($tmp && mb_strlen($tmp) < 1024 * 500) {
 			$tmpdoc = new DOMDocument("1.0", "UTF-8");
 
-			if (!$tmpdoc->loadHTML('<?xml encoding="utf-8" ?>\n' . $tmp))
+			if (!$tmpdoc->loadHTML($tmp))
 				return false;
 
 			if (strtolower($tmpdoc->encoding) != 'utf-8') {
@@ -171,9 +176,9 @@ class Af_Readability extends Plugin {
 				$tmp = $tmpdoc->saveHTML();
 			}
 
-			$r = new Readability(new Configuration());
-
 			try {
+				$r = new Readability(new Configuration());
+
 				if ($r->parse($tmp)) {
 
 					$tmpxpath = new DOMXPath($r->getDOMDOcument());

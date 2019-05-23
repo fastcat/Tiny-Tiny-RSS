@@ -66,10 +66,6 @@
 				array_push($errors, "Data export cache is not writable (chmod -R 777 ".CACHE_DIR."/export)");
 			}
 
-			if (!is_writable(CACHE_DIR . "/js")) {
-				array_push($errors, "Javascript cache is not writable (chmod -R 777 ".CACHE_DIR."/js)");
-			}
-
 			if (GENERATED_CONFIG_CHECK != EXPECTED_CONFIG_VERSION) {
 				array_push($errors,
 					"Configuration option checker sanity_config.php is outdated, please recreate it using ./utils/regen_config_checks.sh");
@@ -187,7 +183,6 @@
 				<link rel="stylesheet" type="text/css" href="css/default.css">
 			</head>
 		<body class='sanity_failed claro ttrss_utility'>
-		<div class="floatingLogo"><img src="images/logo_small.png"></div>
 			<div class="content">
 
 			<h1>Startup failed</h1>

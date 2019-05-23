@@ -63,7 +63,6 @@
 		</head>
 
 		<body>
-		<div class="floatingLogo"><img src="images/logo_small.png"></div>
 		<h1><?php echo __("Tiny Tiny RSS data update script.") ?></h1>
 
 		<?php print_error("Please run this script from the command line. Use option \"--help\" to display command help if this error is displayed erroneously."); ?>
@@ -117,15 +116,19 @@
 	}
 
 	Debug::set_enabled(true);
-	Debug::set_quiet(isset($options['quiet']));
 
 	if (isset($options["log-level"])) {
 	    Debug::set_loglevel((int)$options["log-level"]);
     }
 
 	if (isset($options["log"])) {
+		Debug::set_quiet(isset($options['quiet']));
 		Debug::set_logfile($options["log"]);
         Debug::log("Logging to " . $options["log"]);
+    } else {
+	    if (isset($options['quiet'])) {
+			Debug::set_loglevel(Debug::$LOG_DISABLED);
+        }
     }
 
 	if (!isset($options["daemon"])) {
