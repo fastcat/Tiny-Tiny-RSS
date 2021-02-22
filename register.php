@@ -89,15 +89,18 @@
 		return;
 	}
 ?>
-
+<!DOCTYPE html>
 <html>
 <head>
 <title>Create new account</title>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<?php echo stylesheet_tag("css/default.css") ?>
+<?php echo stylesheet_tag("themes/light.css") ?>
 <?php echo javascript_tag("js/common.js") ?>
 <?php echo javascript_tag("lib/prototype.js") ?>
 <?php echo javascript_tag("lib/scriptaculous/scriptaculous.js?load=effects,controls") ?>
+<?php if (theme_exists(LOCAL_OVERRIDE_STYLESHEET)) {
+		echo stylesheet_tag(get_theme_path(LOCAL_OVERRIDE_STYLESHEET));
+} ?>
 </head>
 
 <script type="text/javascript">
@@ -288,7 +291,7 @@
 
 					$new_uid = db_fetch_result($result, 0, "id");
 
-					initialize_user( $new_uid);
+					Pref_Users::initialize_user($new_uid);
 
 					$reg_text = "Hi!\n".
 						"\n".

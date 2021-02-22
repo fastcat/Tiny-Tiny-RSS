@@ -3,12 +3,12 @@
 	// *** Database configuration (important!) ***
 	// *******************************************
 
-	define('DB_TYPE', "pgsql"); // or mysql
-	define('DB_HOST', "localhost");
-	define('DB_USER', "fox");
-	define('DB_NAME', "fox");
-	define('DB_PASS', "XXXXXX");
-	define('DB_PORT', ''); // usually 5432 for PostgreSQL, 3306 for MySQL
+	define('DB_TYPE', '%DB_TYPE'); // pgsql or mysql
+	define('DB_HOST', '%DB_HOST');
+	define('DB_USER', '%DB_USER');
+	define('DB_NAME', '%DB_NAME');
+	define('DB_PASS', '%DB_PASS');
+	define('DB_PORT', '%DB_PORT'); // usually 5432 for PostgreSQL, 3306 for MySQL
 
 	define('MYSQL_CHARSET', 'UTF8');
 	// Connection charset for MySQL. If you have a legacy database and/or experience
@@ -18,11 +18,13 @@
 	// *** Basic settings (important!) ***
 	// ***********************************
 
-	define('SELF_URL_PATH', 'http://example.org/tt-rss/');
-	// Full URL of your tt-rss installation. This should be set to the
-	// location of tt-rss directory, e.g. http://example.org/tt-rss/
-	// You need to set this option correctly otherwise several features
-	// including PUSH, bookmarklets and browser integration will not work properly.
+	define('SELF_URL_PATH', '%SELF_URL_PATH');
+	// This should be set to a fully qualified URL used to access
+	// your tt-rss instance over the net, such as: https://example.org/tt-rss/
+	// The value should be a constant string literal. Please don't use
+	// PHP server variables here - you might introduce security
+	// issues on your install and cause hard to debug problems.
+	// If your tt-rss instance is behind a reverse proxy, use the external URL.
 
 	define('SINGLE_USER_MODE', false);
 	// Operate in single user mode, disables all functionality related to
@@ -36,7 +38,7 @@
 	// background processes while not running tt-rss, this method is generally
 	// viable to keep your feeds up to date.
 	// Still, there are more robust (and recommended) updating methods
-	// available, you can read about them here: http://tt-rss.org/wiki/UpdatingFeeds
+	// available, you can read about them here: https://tt-rss.org/wiki/UpdatingFeeds
 
 	// *****************************
 	// *** Files and directories ***
@@ -86,18 +88,6 @@
 	// When this option is not 0, users ability to control feed purging
 	// intervals is disabled and all articles (which are not starred)
 	// older than this amount of days are purged.
-
-	// ****************************
-	// *** Sphinx search plugin ***
-	// ****************************
-
-	define('SPHINX_SERVER', 'localhost:9312');
-	// Hostname:port combination for the Sphinx server.
-
-	define('SPHINX_INDEX', 'ttrss, delta');
-	// Index name in Sphinx configuration. You can specify multiple indexes
-	// as a comma-separated string.
-	// Example configuration files are available on tt-rss wiki.
 
 	// ***********************************
 	// *** Self-registrations by users ***

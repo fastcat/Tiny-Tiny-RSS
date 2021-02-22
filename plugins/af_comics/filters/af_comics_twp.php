@@ -7,11 +7,11 @@ class Af_Comics_Twp extends Af_ComicFilter {
 
 	function process(&$article) {
 
-		if (strpos($article["link"], "threewordphrase.com") !== FALSE) {
+		if (strpos($article["link"], "threewordphrase.com") !== false) {
 
 				$doc = new DOMDocument();
 
-				if (@$doc->loadHTML(fetch_file_contents($article["link"]))) {
+				if (@$doc->loadHTML(UrlHelper::fetch($article["link"]))) {
 					$xpath = new DOMXpath($doc);
 
 					$basenode = $xpath->query("//td/center/img")->item(0);

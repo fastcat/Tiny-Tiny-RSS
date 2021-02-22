@@ -6,8 +6,7 @@
 	require_once "autoload.php";
 	require_once "errorhandler.php";
 	require_once "lib/accept-to-gettext.php";
-	require_once "lib/gettext/gettext.inc";
-	require_once "version.php";
+	require_once "lib/gettext/gettext.inc.php";
 
 	$session_expire = min(2147483647 - time() - 1, max(SESSION_COOKIE_LIFETIME, 86400));
 	$session_name = (!defined('TTRSS_SESSION_NAME')) ? "ttrss_sid" : TTRSS_SESSION_NAME;
@@ -20,7 +19,7 @@
 	ini_set("session.name", $session_name);
 	ini_set("session.use_only_cookies", true);
 	ini_set("session.gc_maxlifetime", $session_expire);
-	ini_set("session.cookie_lifetime", min(0, SESSION_COOKIE_LIFETIME));
+	ini_set("session.cookie_lifetime", 0);
 
 	function session_get_schema_version() {
 		global $schema_version;
@@ -49,7 +48,7 @@
 
 		if ($_SESSION["uid"]) {
 
-			if ($_SESSION["user_agent"] != sha1($_SERVER['HTTP_USER_AGENT'])) {
+			if (!defined('_SESSION_SKIP_UA_CHECKS') && $_SESSION["user_agent"] != sha1($_SERVER['HTTP_USER_AGENT'])) {
 				$_SESSION["login_error_msg"] = __("Session failed to validate (UA changed).");
 				return false;
 			}

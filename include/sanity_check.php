@@ -14,14 +14,38 @@
 	 * If you come crying when stuff inevitably breaks, you will be mocked and told
 	 * to get out. */
 
+	function make_self_url() {
+		$proto = is_server_https() ? 'https' : 'http';
+
+		return $proto . '://' . $_SERVER["HTTP_HOST"] . $_SERVER["REQUEST_URI"];
+	}
+
 	function make_self_url_path() {
+		if (!isset($_SERVER["HTTP_HOST"])) return false;
+
 		$proto = is_server_https() ? 'https' : 'http';
 		$url_path = $proto . '://' . $_SERVER["HTTP_HOST"] . parse_url($_SERVER["REQUEST_URI"], PHP_URL_PATH);
 
 		return $url_path;
 	}
 
-	/**
+	function check_mysql_tables() {
+		$pdo = Db::pdo();
+
+		$sth = $pdo->prepare("SELECT engine, table_name FROM information_schema.tables WHERE
+				table_schema = ? AND table_name LIKE 'ttrss_%' AND engine != 'InnoDB'");
+		$sth->execute([DB_NAME]);
+
+		$bad_tables = [];
+
+		while ($line = $sth->fetch()) {
+			array_push($bad_tables, $line);
+		}
+
+		return $bad_tables;
+	}
+
+/**
 	 * @SuppressWarnings(PHPMD.UnusedLocalVariable)
 	 */
 	function initial_sanity_check() {
@@ -38,7 +62,7 @@
 				array_push($errors, "Please copy config.php-dist to config.php or run the installer in install/");
 			}
 
-			if (strpos(PLUGINS, "auth_") === FALSE) {
+			if (strpos(PLUGINS, "auth_") === false) {
 				array_push($errors, "Please enable at least one authentication module via PLUGINS constant in config.php");
 			}
 
@@ -48,6 +72,10 @@
 
 			if (version_compare(PHP_VERSION, '5.6.0', '<')) {
 				array_push($errors, "PHP version 5.6.0 or newer required. You're using " . PHP_VERSION . ".");
+			}
+
+			if (!class_exists("UConverter")) {
+				array_push($errors, "PHP UConverter class is missing, it's provided by the Internationalization (intl) module.");
 			}
 
 			if (CONFIG_VERSION != EXPECTED_CONFIG_VERSION) {
@@ -79,7 +107,7 @@
 			}
 
 			if (SINGLE_USER_MODE && class_exists("PDO")) {
-			    $pdo = DB::pdo();
+			    $pdo = Db::pdo();
 
 				$res = $pdo->query("SELECT id FROM ttrss_users WHERE id = 1");
 
@@ -89,14 +117,18 @@
 			}
 
 			$ref_self_url_path = make_self_url_path();
-			$ref_self_url_path = preg_replace("/\w+\.php$/", "", $ref_self_url_path);
 
-			if (SELF_URL_PATH == "http://example.org/tt-rss/") {
-				array_push($errors,
-						"Please set SELF_URL_PATH to the correct value for your server (possible value: <b>$ref_self_url_path</b>)");
+			if ($ref_self_url_path) {
+				$ref_self_url_path = preg_replace("/\w+\.php$/", "", $ref_self_url_path);
 			}
 
-			if (isset($_SERVER["HTTP_HOST"]) &&
+			if (SELF_URL_PATH == "http://example.org/tt-rss/") {
+				$hint = $ref_self_url_path ? "(possible value: <b>$ref_self_url_path</b>)" : "";
+				array_push($errors,
+						"Please set SELF_URL_PATH to the correct value for your server $hint");
+			}
+
+			if ($ref_self_url_path &&
 				(!defined('_SKIP_SELF_URL_PATH_CHECKS') || !_SKIP_SELF_URL_PATH_CHECKS) &&
 				SELF_URL_PATH != $ref_self_url_path && SELF_URL_PATH != mb_substr($ref_self_url_path, 0, mb_strlen($ref_self_url_path)-1)) {
 				array_push($errors,
@@ -176,11 +208,12 @@
 		}
 
 		if (count($errors) > 0 && $_SERVER['REQUEST_URI']) { ?>
+			<!DOCTYPE html>
 			<html>
 			<head>
 			<title>Startup failed</title>
 				<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-				<link rel="stylesheet" type="text/css" href="css/default.css">
+				<link rel="stylesheet" type="text/css" href="themes/light.css">
 			</head>
 		<body class='sanity_failed claro ttrss_utility'>
 			<div class="content">
@@ -192,8 +225,8 @@
 
 			<?php foreach ($errors as $error) { echo format_error($error); } ?>
 
-			<p>You might want to check tt-rss <a href="http://tt-rss.org/wiki">wiki</a> or the
-				<a href="http://tt-rss.org/forum">forums</a> for more information. Please search the forums before creating new topic
+			<p>You might want to check tt-rss <a href="https://tt-rss.org/wiki.php">wiki</a> or the
+				<a href="https://community.tt-rss.org/">forums</a> for more information. Please search the forums before creating new topic
 				for your question.</p>
 
 		</div>

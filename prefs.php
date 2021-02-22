@@ -16,38 +16,37 @@
 	require_once "sessions.php";
 	require_once "functions.php";
 	require_once "sanity_check.php";
-	require_once "version.php";
 	require_once "config.php";
 	require_once "db-prefs.php";
 
 	if (!init_plugins()) return;
 
-	login_sequence();
+	UserHelper::login_sequence();
 
 	header('Content-Type: text/html; charset=utf-8');
 ?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!DOCTYPE html>
 <html>
 <head>
 	<title>Tiny Tiny RSS : <?php echo __("Preferences") ?></title>
     <meta name="viewport" content="initial-scale=1,width=device-width" />
 
-	<script type="text/javascript">
-		var __ttrss_version = "<?php echo VERSION ?>"
-	</script>
-
-	<?php if ($_SESSION["uid"]) {
+	<?php if ($_SESSION["uid"] && !isset($_REQUEST["ignore-theme"])) {
 		$theme = get_pref("USER_CSS_THEME", false, false);
 		if ($theme && theme_exists("$theme")) {
 			echo stylesheet_tag(get_theme_path($theme), 'theme_css');
-		} else {
-			echo stylesheet_tag("css/default.css", 'theme_css');
 		}
-	}
-	?>
+	} ?>
 
-	<?php print_user_stylesheet() ?>
+	<?php if (theme_exists(LOCAL_OVERRIDE_STYLESHEET)) {
+		echo stylesheet_tag(get_theme_path(LOCAL_OVERRIDE_STYLESHEET));
+	} ?>
+
+	<script type="text/javascript">
+		const __csrf_token = "<?php echo $_SESSION["csrf_token"]; ?>";
+	</script>
+
+	<?php UserHelper::print_user_stylesheet() ?>
 
 	<link rel="shortcut icon" type="image/png" href="images/favicon.png"/>
 	<link rel="icon" type="image/png" sizes="72x72" href="images/favicon-72px.png" />
@@ -100,10 +99,22 @@
 	?>
 	</script>
 
+	<style type="text/css">
+		@media (prefers-color-scheme: dark) {
+			body {
+				background : #303030;
+			}
+		}
+
+		body.css_loading * {
+			display : none;
+		}
+	</style>
+
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 </head>
 
-<body class="flat ttrss_main ttrss_prefs">
+<body class="flat ttrss_main ttrss_prefs css_loading">
 
 <div id="notify" class="notify"></div>
 <div id="cmdline" style="display : none"></div>
@@ -153,15 +164,13 @@
                 "hook_prefs_tabs", false);
         ?>
         </div>
-    <div id="footer" dojoType="dijit.layout.ContentPane" region="bottom">
-        <a class="insensitive" target="_blank" href="http://tt-rss.org/">
-        Tiny Tiny RSS</a>
-        <?php if (!defined('HIDE_VERSION')) { ?>
-             v<?php echo VERSION ?>
-        <?php } ?>
+		<?php $version = get_version($git_commit, $git_timestamp, $last_error); ?>
+		<div id="footer" dojoType="dijit.layout.ContentPane" region="bottom">
+		<a class="text-muted" target="_blank" href="https://tt-rss.org/">Tiny Tiny RSS</a>
+			<span title="<?php echo htmlspecialchars($last_error) ?>">v<?php echo $version ?></span>
         &copy; 2005-<?php echo date('Y') ?>
-        <a class="insensitive" target="_blank"
-        href="http://fakecake.org/">Andrew Dolgov</a>
+        <a class="text-muted" target="_blank"
+        href="https://fakecake.org/">Andrew Dolgov</a>
     </div> <!-- footer -->
 </div>
 

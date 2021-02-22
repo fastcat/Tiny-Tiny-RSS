@@ -14,6 +14,64 @@
 	require_once "db.php";
 	require_once "db-prefs.php";
 
+	function make_stampfile($filename) {
+		$fp = fopen(LOCK_DIRECTORY . "/$filename", "w");
+
+		if (flock($fp, LOCK_EX | LOCK_NB)) {
+			fwrite($fp, time() . "\n");
+			flock($fp, LOCK_UN);
+			fclose($fp);
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	function cleanup_tags($days = 14, $limit = 1000) {
+
+		$days = (int) $days;
+
+		if (DB_TYPE == "pgsql") {
+			$interval_query = "date_updated < NOW() - INTERVAL '$days days'";
+		} else if (DB_TYPE == "mysql") {
+			$interval_query = "date_updated < DATE_SUB(NOW(), INTERVAL $days DAY)";
+		}
+
+		$tags_deleted = 0;
+
+		$pdo = Db::pdo();
+
+		while ($limit > 0) {
+			$limit_part = 500;
+
+			$sth = $pdo->prepare("SELECT ttrss_tags.id AS id
+						FROM ttrss_tags, ttrss_user_entries, ttrss_entries
+						WHERE post_int_id = int_id AND $interval_query AND
+						ref_id = ttrss_entries.id AND tag_cache != '' LIMIT ?");
+			$sth->bindValue(1, $limit_part, PDO::PARAM_INT);
+			$sth->execute();
+
+			$ids = array();
+
+			while ($line = $sth->fetch()) {
+				array_push($ids, $line['id']);
+			}
+
+			if (count($ids) > 0) {
+				$ids = join(",", $ids);
+
+				$usth = $pdo->query("DELETE FROM ttrss_tags WHERE id IN ($ids)");
+				$tags_deleted = $usth->rowCount();
+			} else {
+				break;
+			}
+
+			$limit -= $limit_part;
+		}
+
+		return $tags_deleted;
+	}
+
 	if (!defined('PHP_EXECUTABLE'))
 		define('PHP_EXECUTABLE', '/usr/bin/php');
 
@@ -22,9 +80,10 @@
 	init_plugins();
 
 	$longopts = array("feeds",
-			"feedbrowser",
 			"daemon",
 			"daemon-loop",
+			"update-feed:",
+			"send-digests",
 			"task:",
 			"cleanup-tags",
 			"quiet",
@@ -32,7 +91,7 @@
 			"log-level:",
 			"indexes",
 			"pidlock:",
-			"update-schema",
+			"update-schema::",
 			"convert-filters",
 			"force-update",
 			"gen-search-idx",
@@ -40,6 +99,7 @@
 			"debug-feed:",
 			"force-refetch",
 			"force-rehash",
+			"opml-export:",
 			"help");
 
 	foreach (PluginHost::getInstance()->get_commands() as $command => $data) {
@@ -56,7 +116,9 @@
 	}
 
 	if (count($options) == 0 && !defined('STDIN')) {
-		?> <html>
+		?>
+		<!DOCTYPE html>
+		<html>
 		<head>
 		<title>Tiny Tiny RSS data update script.</title>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
@@ -75,29 +137,30 @@
 	if (count($options) == 0 || isset($options["help"]) ) {
 		print "Tiny Tiny RSS data update script.\n\n";
 		print "Options:\n";
-		print "  --feeds              - update feeds\n";
-		print "  --feedbrowser        - update feedbrowser\n";
-		print "  --daemon             - start single-process update daemon\n";
-		print "  --task N             - create lockfile using this task id\n";
-		print "  --cleanup-tags       - perform tags table maintenance\n";
-		print "  --quiet              - don't output messages to stdout\n";
-		print "  --log FILE           - log messages to FILE\n";
-		print "  --log-level N        - log verbosity level\n";
-		print "  --indexes            - recreate missing schema indexes\n";
-		print "  --update-schema      - update database schema\n";
-		print "  --gen-search-idx     - generate basic PostgreSQL fulltext search index\n";
-		print "  --convert-filters    - convert type1 filters to type2\n";
-		print "  --force-update       - force update of all feeds\n";
-		print "  --list-plugins       - list all available plugins\n";
-		print "  --debug-feed N       - perform debug update of feed N\n";
-		print "  --force-refetch      - debug update: force refetch feed data\n";
-		print "  --force-rehash       - debug update: force rehash articles\n";
-		print "  --help               - show this help\n";
+		print "  --feeds                     - update feeds\n";
+		print "  --daemon                    - start single-process update daemon\n";
+		print "  --task N                    - create lockfile using this task id\n";
+		print "  --cleanup-tags              - perform tags table maintenance\n";
+		print "  --quiet                     - don't output messages to stdout\n";
+		print "  --log FILE                  - log messages to FILE\n";
+		print "  --log-level N               - log verbosity level\n";
+		print "  --indexes                   - recreate missing schema indexes\n";
+		print "  --update-schema[=force-yes] - update database schema (without prompting)\n";
+		print "  --gen-search-idx            - generate basic PostgreSQL fulltext search index\n";
+		print "  --convert-filters           - convert type1 filters to type2\n";
+		print "  --send-digests              - send pending email digests\n";
+		print "  --force-update              - force update of all feeds\n";
+		print "  --list-plugins              - list all available plugins\n";
+		print "  --debug-feed N              - perform debug update of feed N\n";
+		print "  --force-refetch             - debug update: force refetch feed data\n";
+		print "  --force-rehash              - debug update: force rehash articles\n";
+		print "  --opml-export \"USER FILE\"   - export feeds of selected user to OPML\n";
+		print "  --help                      - show this help\n";
 		print "Plugin options:\n";
 
 		foreach (PluginHost::getInstance()->get_commands() as $command => $data) {
 			$args = $data['arghelp'];
-			printf(" --%-19s - %s\n", "$command $args", $data["description"]);
+			printf(" --%-26s - %s\n", "$command $args", $data["description"]);
 		}
 
 		return;
@@ -111,7 +174,7 @@
 		$schema_version = get_schema_version();
 
 		if ($schema_version != SCHEMA_VERSION) {
-			die("Schema version is wrong, please upgrade the database.\n");
+			die("Schema version is wrong, please upgrade the database (--update-schema).\n");
 		}
 	}
 
@@ -155,7 +218,7 @@
 
 	if (isset($options["task"]) && isset($options["pidlock"])) {
 		$waits = $options["task"] * 5;
-		Debug::log("Waiting before update ($waits)");
+		Debug::log("Waiting before update ($waits)...");
 		sleep($waits);
 	}
 
@@ -173,22 +236,17 @@
 	}
 
 	if (isset($options["feeds"])) {
-		RSSUtils::update_daemon_common();
-		RSSUtils::housekeeping_common(true);
+		RSSUtils::update_daemon_common(DAEMON_FEED_LIMIT, $options);
+		RSSUtils::housekeeping_common();
 
-		PluginHost::getInstance()->run_hooks(PluginHost::HOOK_UPDATE_TASK, "hook_update_task", $op);
-	}
-
-	if (isset($options["feedbrowser"])) {
-		$count = RSSUtils::update_feedbrowser_cache();
-		print "Finished, $count feeds processed.\n";
+		PluginHost::getInstance()->run_hooks(PluginHost::HOOK_UPDATE_TASK, "hook_update_task", $options);
 	}
 
 	if (isset($options["daemon"])) {
 		while (true) {
 			$quiet = (isset($options["quiet"])) ? "--quiet" : "";
-            $log = isset($options['log']) ? '--log '.$options['log'] : '';
-            $log_level = isset($options['log-level']) ? '--log-level '.$options['log-level'] : '';
+			$log = isset($options['log']) ? '--log '.$options['log'] : '';
+			$log_level = isset($options['log-level']) ? '--log-level '.$options['log-level'] : '';
 
 			passthru(PHP_EXECUTABLE . " " . $argv[0] ." --daemon-loop $quiet $log $log_level");
 
@@ -200,15 +258,31 @@
 		}
 	}
 
+	if (isset($options["update-feed"])) {
+		try {
+
+			if (!RSSUtils::update_rss_feed($options["update-feed"], true))
+				exit(100);
+
+		} catch (PDOException $e) {
+			Debug::log(sprintf("Exception while updating feed %d: %s (%s:%d)",
+				$options["update-feed"], $e->getMessage(), $e->getFile(), $e->getLine()));
+
+			Logger::get()->log_error(E_USER_WARNING, $e->getMessage(), $e->getFile(), $e->getLine(), $e->getTraceAsString());
+
+			exit(110);
+		}
+	}
+
 	if (isset($options["daemon-loop"])) {
 		if (!make_stampfile('update_daemon.stamp')) {
 			Debug::log("warning: unable to create stampfile\n");
 		}
 
-		RSSUtils::update_daemon_common(isset($options["pidlock"]) ? 50 : DAEMON_FEED_LIMIT);
+		RSSUtils::update_daemon_common(isset($options["pidlock"]) ? 50 : DAEMON_FEED_LIMIT, $options);
 
 		if (!isset($options["pidlock"]) || $options["task"] == 0)
-			RSSUtils::housekeeping_common(true);
+			RSSUtils::housekeeping_common();
 
 		PluginHost::getInstance()->run_hooks(PluginHost::HOOK_UPDATE_TASK, "hook_update_task", $op);
 	}
@@ -325,30 +399,46 @@
 	}
 
 	if (isset($options["update-schema"])) {
-		Debug::log("checking for updates (" . DB_TYPE . ")...");
+		Debug::log("Checking for updates (" . DB_TYPE . ")...");
 
 		$updater = new DbUpdater(Db::pdo(), DB_TYPE, SCHEMA_VERSION);
 
 		if ($updater->isUpdateRequired()) {
-			Debug::log("schema update required, version " . $updater->getSchemaVersion() . " to " . SCHEMA_VERSION);
-			Debug::log("WARNING: please backup your database before continuing.");
-			Debug::log("Type 'yes' to continue.");
+			Debug::log("Schema update required, version " . $updater->getSchemaVersion() . " to " . SCHEMA_VERSION);
 
-			if (read_stdin() != 'yes')
-				exit;
+			if (DB_TYPE == "mysql")
+				Debug::Log("READ THIS: Due to MySQL limitations, your database is not completely protected while updating.\n".
+					"Errors may put it in an inconsistent state requiring manual rollback.\nBACKUP YOUR DATABASE BEFORE CONTINUING.");
+			else
+				Debug::log("WARNING: please backup your database before continuing.");
+
+			if ($options["update-schema"] != "force-yes") {
+				Debug::log("Type 'yes' to continue.");
+
+				if (read_stdin() != 'yes')
+					exit;
+			} else {
+				Debug::log("Proceeding to update without confirmation...");
+			}
+
+			Debug::log("Performing updates to version " . SCHEMA_VERSION . "...");
 
 			for ($i = $updater->getSchemaVersion() + 1; $i <= SCHEMA_VERSION; $i++) {
-				Debug::log("performing update up to version $i...");
+				Debug::log("* Updating to version $i...");
 
 				$result = $updater->performUpdateTo($i, false);
 
-				Debug::log($result ? "OK!" : "FAILED!");
-
-				if (!$result) return;
-
+				if ($result) {
+					Debug::log("* Completed.");
+				} else {
+					Debug::log("One of the updates failed. Either retry the process or perform updates manually.");
+					return;
+				}
 			}
+
+			Debug::log("All done.");
 		} else {
-			Debug::log("update not required.");
+			Debug::log("Database schema is already at latest version.");
 		}
 
 	}
@@ -424,6 +514,30 @@
 		$rc = RSSUtils::update_rss_feed($feed) != false ? 0 : 1;
 
 		exit($rc);
+	}
+
+	if (isset($options["send-digests"])) {
+		Digest::send_headlines_digests();
+	}
+
+	if (isset($options["opml-export"])) {
+		list ($user, $filename) = explode(" ", $options["opml-export"], 2);
+
+		Debug::log("Exporting feeds of user $user to $filename as OPML...");
+
+		$sth = $pdo->prepare("SELECT id FROM ttrss_users WHERE login = ?");
+		$sth->execute([$user]);
+
+		if ($res = $sth->fetch()) {
+			$opml = new OPML("");
+
+			$rc = $opml->opml_export($filename, $res["id"], false, true, true);
+
+			Debug::log($rc ? "Success." : "Failed.");
+		} else {
+			Debug::log("User not found: $user");
+		}
+
 	}
 
 	PluginHost::getInstance()->run_commands($options);

@@ -92,18 +92,20 @@ class Mail extends Plugin {
 		if ($row = $sth->fetch()) {
 			$user_email = htmlspecialchars($row['email']);
 			$user_name = htmlspecialchars($row['full_name']);
+		} else {
+			$user_name = "";
+			$user_email = "";
 		}
 
-		if (!$user_name) $user_name = $_SESSION['name'];
+		if (!$user_name)
+			$user_name = $_SESSION['name'];
 
 		print_hidden("from_email", "$user_email");
 		print_hidden("from_name", "$user_name");
 
-		require_once "lib/MiniTemplator.class.php";
+		$tpl = new Templator();
 
-		$tpl = new MiniTemplator;
-
-		$tpl->readTemplateFromFile("templates/email_article_template.txt");
+		$tpl->readTemplateFromFile("email_article_template.txt");
 
 		$tpl->setVariable('USER_NAME', $_SESSION["name"], true);
 		$tpl->setVariable('USER_EMAIL', $user_email, true);
@@ -116,6 +118,8 @@ class Mail extends Plugin {
 
 		if (count($ids) > 1) {
 			$subject = __("[Forwarded]") . " " . __("Multiple articles");
+		} else {
+			$subject = "";
 		}
 
 		while ($line = $sth->fetch()) {
@@ -162,22 +166,21 @@ class Mail extends Plugin {
 
 		print "</td><td>";
 
-		print "<input dojoType=\"dijit.form.ValidationTextBox\" required=\"true\"
-				style=\"width : 30em;\"
-				name=\"subject\" value=\"$subject\" id=\"subject\">";
+		print "<input dojoType='dijit.form.ValidationTextBox' required='true'
+				style='width : 30em;' name='subject' value=\"$subject\" id='subject'>";
 
 		print "</td></tr>";
 
-		print "<tr><td colspan='2'><textarea dojoType=\"dijit.form.SimpleTextarea\"
+		print "<tr><td colspan='2'><textarea dojoType='dijit.form.SimpleTextarea'
 			style='height : 200px; font-size : 12px; width : 98%' rows=\"20\"
 			name='content'>$content</textarea>";
 
 		print "</td></tr></table>";
 
-		print "<div class='dlgButtons'>";
-		print "<button dojoType=\"dijit.form.Button\" onclick=\"dijit.byId('emailArticleDlg').execute()\">".__('Send e-mail')."</button> ";
-		print "<button dojoType=\"dijit.form.Button\" onclick=\"dijit.byId('emailArticleDlg').hide()\">".__('Cancel')."</button>";
-		print "</div>";
+		print "<footer>";
+		print "<button dojoType='dijit.form.Button' onclick=\"dijit.byId('emailArticleDlg').execute()\">".__('Send e-mail')."</button> ";
+		print "<button dojoType='dijit.form.Button' onclick=\"dijit.byId('emailArticleDlg').hide()\">".__('Cancel')."</button>";
+		print "</footer>";
 
 		//return;
 	}

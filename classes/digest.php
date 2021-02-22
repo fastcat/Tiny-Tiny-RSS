@@ -90,22 +90,22 @@ class Digest
 
 	static function prepare_headlines_digest($user_id, $days = 1, $limit = 1000) {
 
-		require_once "lib/MiniTemplator.class.php";
+		$tpl = new Templator();
+		$tpl_t = new Templator();
 
-		$tpl = new MiniTemplator;
-		$tpl_t = new MiniTemplator;
-
-		$tpl->readTemplateFromFile("templates/digest_template_html.txt");
-		$tpl_t->readTemplateFromFile("templates/digest_template.txt");
+		$tpl->readTemplateFromFile("digest_template_html.txt");
+		$tpl_t->readTemplateFromFile("digest_template.txt");
 
 		$user_tz_string = get_pref('USER_TIMEZONE', $user_id);
-		$local_ts = convert_timestamp(time(), 'UTC', $user_tz_string);
+		$local_ts = TimeHelper::convert_timestamp(time(), 'UTC', $user_tz_string);
 
 		$tpl->setVariable('CUR_DATE', date('Y/m/d', $local_ts));
 		$tpl->setVariable('CUR_TIME', date('G:i', $local_ts));
+		$tpl->setVariable('TTRSS_HOST', SELF_URL_PATH);
 
 		$tpl_t->setVariable('CUR_DATE', date('Y/m/d', $local_ts));
 		$tpl_t->setVariable('CUR_TIME', date('G:i', $local_ts));
+		$tpl_t->setVariable('TTRSS_HOST', SELF_URL_PATH);
 
 		$affected_ids = array();
 
@@ -159,11 +159,20 @@ class Digest
 
 			array_push($affected_ids, $line["ref_id"]);
 
-			$updated = make_local_datetime($line['last_updated'], false,
+			$updated = TimeHelper::make_local_datetime($line['last_updated'], false,
 				$user_id);
 
 			if (get_pref('ENABLE_FEED_CATS', $user_id)) {
 				$line['feed_title'] = $line['cat_title'] . " / " . $line['feed_title'];
+			}
+
+			$article_labels = Article::get_article_labels($line["ref_id"], $user_id);
+			$article_labels_formatted = "";
+
+			if (is_array($article_labels) && count($article_labels) > 0) {
+				$article_labels_formatted = implode(", ", array_map(function($a) {
+					return $a[1];
+				}, $article_labels));
 			}
 
 			$tpl->setVariable('FEED_TITLE', $line["feed_title"]);
@@ -174,6 +183,7 @@ class Digest
 				truncate_string(strip_tags($line["content"]), 300));
 //			$tpl->setVariable('ARTICLE_CONTENT',
 //				strip_tags($article_content));
+			$tpl->setVariable('ARTICLE_LABELS', $article_labels_formatted, true);
 
 			$tpl->addBlock('article');
 
@@ -181,8 +191,9 @@ class Digest
 			$tpl_t->setVariable('ARTICLE_TITLE', $line["title"]);
 			$tpl_t->setVariable('ARTICLE_LINK', $line["link"]);
 			$tpl_t->setVariable('ARTICLE_UPDATED', $updated);
-//			$tpl_t->setVariable('ARTICLE_EXCERPT',
-//				truncate_string(strip_tags($line["excerpt"]), 100));
+			$tpl_t->setVariable('ARTICLE_LABELS', $article_labels_formatted, true);
+			$tpl_t->setVariable('ARTICLE_EXCERPT',
+				truncate_string(strip_tags($line["content"]), 300, "..."), true);
 
 			$tpl_t->addBlock('article');
 

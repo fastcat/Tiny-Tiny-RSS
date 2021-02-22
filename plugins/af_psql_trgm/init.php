@@ -3,6 +3,8 @@ class Af_Psql_Trgm extends Plugin {
 
 	/* @var PluginHost $host */
 	private $host;
+	private $default_similarity = 0.75;
+	private $default_min_length = 32;
 
 	function about() {
 		return array(1.0,
@@ -37,7 +39,6 @@ class Af_Psql_Trgm extends Plugin {
 		$host->add_hook($host::HOOK_PREFS_EDIT_FEED, $this);
 		$host->add_hook($host::HOOK_PREFS_SAVE_FEED, $this);
 		$host->add_hook($host::HOOK_ARTICLE_BUTTON, $this);
-
 	}
 
 	function get_js() {
@@ -98,7 +99,7 @@ class Af_Psql_Trgm extends Plugin {
 
 				print "</div>";
 
-				print "<div style='text-align : right' class='insensitive'>" . smart_date_time(strtotime($line["updated"])) . "</div>";
+				print "<div style='text-align : right' class='text-muted'>" . TimeHelper::smart_date_time(strtotime($line["updated"])) . "</div>";
 
 				print "</li>";
 			}
@@ -107,9 +108,9 @@ class Af_Psql_Trgm extends Plugin {
 
 		}
 
-		print "<div style='text-align : center'>";
-		print "<button dojoType=\"dijit.form.Button\" onclick=\"dijit.byId('trgmRelatedDlg').hide()\">".__('Close this window')."</button>";
-		print "</div>";
+		print "<footer class='text-center'>";
+		print "<button dojoType='dijit.form.Button' onclick=\"dijit.byId('trgmRelatedDlg').hide()\">".__('Close this window')."</button>";
+		print "</footer>";
 
 
 	}
@@ -123,8 +124,8 @@ class Af_Psql_Trgm extends Plugin {
 	function hook_prefs_tab($args) {
 		if ($args != "prefFeeds") return;
 
-		print "<div dojoType=\"dijit.layout.AccordionPane\" 
-			title=\"<i class='material-icons'>extension</i> ".__('Mark similar articles as read')."\">";
+		print "<div dojoType=\"dijit.layout.AccordionPane\"
+			title=\"<i class='material-icons'>extension</i> ".__('Mark similar articles as read (af_psql_trgm)')."\">";
 
 		if (DB_TYPE != "pgsql") {
 			print_error("Database type not supported.");
@@ -132,16 +133,13 @@ class Af_Psql_Trgm extends Plugin {
 
 			$res = $this->pdo->query("select 'similarity'::regproc");
 
-			if (!$res->fetch()) {
+			if (!$res || !$res->fetch()) {
 				print_error("pg_trgm extension not found.");
 			}
 
-			$similarity = $this->host->get($this, "similarity");
-			$min_title_length = $this->host->get($this, "min_title_length");
+			$similarity = $this->host->get($this, "similarity", $this->default_similarity);
+			$min_title_length = $this->host->get($this, "min_title_length", $this->default_min_length);
 			$enable_globally = $this->host->get($this, "enable_globally");
-
-			if (!$similarity) $similarity = '0.75';
-			if (!$min_title_length) $min_title_length = '32';
 
 			print "<form dojoType=\"dijit.form.Form\">";
 
@@ -163,37 +161,44 @@ class Af_Psql_Trgm extends Plugin {
 			print_hidden("method", "save");
 			print_hidden("plugin", "af_psql_trgm");
 
-			print "<p>" . __("PostgreSQL trigram extension returns string similarity as a floating point number (0-1). Setting it too low might produce false positives, zero disables checking.") . "</p>";
-			print_notice("Enable the plugin for specific feeds in the feed editor.");
+			print "<h2>" . __("Global settings") . "</h2>";
 
-			print "<h3>" . __("Global settings") . "</h3>";
+			print_notice("Enable for specific feeds in the feed editor.");
 
-			print "<table>";
+			print "<fieldset>";
 
-			print "<tr><td width=\"40%\">" . __("Minimum similarity:") . "</td>";
-			print "<td>
-				<input dojoType=\"dijit.form.ValidationTextBox\"
-				placeholder=\"0.75\"
-				required=\"1\" name=\"similarity\" value=\"$similarity\"></td></tr>";
-			print "<tr><td width=\"40%\">" . __("Minimum title length:") . "</td>";
-			print "<td>
-				<input dojoType=\"dijit.form.ValidationTextBox\"
+			print "<label>" . __("Minimum similarity:") . "</label> ";
+			print "<input dojoType=\"dijit.form.NumberSpinner\"
+				placeholder=\"0.75\" id='psql_trgm_similarity'
+				required=\"1\" name=\"similarity\" value=\"$similarity\">";
+
+			print "<div dojoType='dijit.Tooltip' connectId='psql_trgm_similarity' position='below'>" .
+				__("PostgreSQL trigram extension returns string similarity as a floating point number (0-1). Setting it too low might produce false positives, zero disables checking.") .
+				"</div>";
+
+			print "</fieldset><fieldset>";
+
+			print "<label>" . __("Minimum title length:") . "</label> ";
+			print "<input dojoType=\"dijit.form.NumberSpinner\"
 				placeholder=\"32\"
-				required=\"1\" name=\"min_title_length\" value=\"$min_title_length\"></td></tr>";
-			print "<tr><td width=\"40%\">" . __("Enable for all feeds:") . "</td>";
-			print "<td>";
+				required=\"1\" name=\"min_title_length\" value=\"$min_title_length\">";
+
+			print "</fieldset><fieldset>";
+
+			print "<label class='checkbox'>";
 			print_checkbox("enable_globally", $enable_globally);
-			print "</td></tr>";
+			print " " . __("Enable for all feeds:");
+			print "</label>";
 
-			print "</table>";
+			print "</fieldset>";
 
-			print "<p>"; print_button("submit", __("Save"));
+			print_button("submit", __("Save"), "class='alt-primary'");
 			print "</form>";
 
-			$enabled_feeds = $this->host->get($this, "enabled_feeds");
-			if (!array($enabled_feeds)) $enabled_feeds = array();
+			/* cleanup */
+			$enabled_feeds = $this->filter_unknown_feeds(
+				$this->get_stored_array("enabled_feeds"));
 
-			$enabled_feeds = $this->filter_unknown_feeds($enabled_feeds);
 			$this->host->set($this, "enabled_feeds", $enabled_feeds);
 
 			if (count($enabled_feeds) > 0) {
@@ -214,39 +219,34 @@ class Af_Psql_Trgm extends Plugin {
 	}
 
 	function hook_prefs_edit_feed($feed_id) {
-		print "<div class=\"dlgSec\">".__("Similarity (pg_trgm)")."</div>";
-		print "<div class=\"dlgSecCont\">";
+		print "<header>".__("Similarity (af_psql_trgm)")."</header>";
+		print "<section>";
 
-		$enabled_feeds = $this->host->get($this, "enabled_feeds");
-		if (!array($enabled_feeds)) $enabled_feeds = array();
-
-		$key = array_search($feed_id, $enabled_feeds);
-		$checked = $key !== FALSE ? "checked" : "";
+		$enabled_feeds = $this->get_stored_array("enabled_feeds");
+		$checked = in_array($feed_id, $enabled_feeds) ? "checked" : "";
 
 		print "<fieldset>";
 
-		print "<label class='checkbox'><input dojoType=\"dijit.form.CheckBox\" type=\"checkbox\" id=\"trgm_similarity_enabled\"
-			name=\"trgm_similarity_enabled\"
-			$checked> ".__('Mark similar articles as read')."</label>";
+		print "<label class='checkbox'><input dojoType='dijit.form.CheckBox' type='checkbox' id='trgm_similarity_enabled'
+			name='trgm_similarity_enabled' $checked> ".__('Mark similar articles as read')."</label>";
 
 		print "</fieldset>";
 
-		print "</div>";
+		print "</section>";
 	}
 
 	function hook_prefs_save_feed($feed_id) {
-		$enabled_feeds = $this->host->get($this, "enabled_feeds");
-		if (!is_array($enabled_feeds)) $enabled_feeds = array();
+		$enabled_feeds = $this->get_stored_array("enabled_feeds");
 
 		$enable = checkbox_to_sql_bool($_POST["trgm_similarity_enabled"]);
 		$key = array_search($feed_id, $enabled_feeds);
 
 		if ($enable) {
-			if ($key === FALSE) {
+			if ($key === false) {
 				array_push($enabled_feeds, $feed_id);
 			}
 		} else {
-			if ($key !== FALSE) {
+			if ($key !== false) {
 				unset($enabled_feeds[$key]);
 			}
 		}
@@ -259,29 +259,39 @@ class Af_Psql_Trgm extends Plugin {
 		if (DB_TYPE != "pgsql") return $article;
 
 		$res = $this->pdo->query("select 'similarity'::regproc");
-		if (!$res->fetch()) return $article;
+		if (!$res || !$res->fetch()) return $article;
 
 		$enable_globally = $this->host->get($this, "enable_globally");
 
-		if (!$enable_globally) {
-			$enabled_feeds = $this->host->get($this, "enabled_feeds");
-			$key = array_search($article["feed"]["id"], $enabled_feeds);
-			if ($key === FALSE) return $article;
+		if (!$enable_globally &&
+				!in_array($article["feed"]["id"],
+					$this->get_stored_array("enabled_feeds"))) {
+
+			return $article;
 		}
 
-		$similarity = (float) $this->host->get($this, "similarity");
-		if ($similarity < 0.01) return $article;
+		$similarity = (float) $this->host->get($this, "similarity", $this->default_similarity);
 
-		$min_title_length = (int) $this->host->get($this, "min_title_length");
-		if (mb_strlen($article["title"]) < $min_title_length) return $article;
+		if ($similarity < 0.01) {
+			Debug::log("af_psql_trgm: similarity is set too low ($similarity)", Debug::$LOG_EXTENDED);
+			return $article;
+		}
+
+		$min_title_length = (int) $this->host->get($this, "min_title_length", $this->default_min_length);
+
+		if (mb_strlen($article["title"]) < $min_title_length) {
+			Debug::log("af_psql_trgm: article title is too short (min: $min_title_length)", Debug::$LOG_EXTENDED);
+			return $article;
+		}
 
 		$owner_uid = $article["owner_uid"];
 		$entry_guid = $article["guid_hashed"];
 		$title_escaped = $article["title"];
 
 		// trgm does not return similarity=1 for completely equal strings
+		// this seems to be no longer the case (fixed in upstream?)
 
-		$sth = $this->pdo->prepare("SELECT COUNT(id) AS nequal
+		/* $sth = $this->pdo->prepare("SELECT COUNT(id) AS nequal
 		  FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id AND
 		  date_entered >= NOW() - interval '3 days' AND
 		  title = ? AND
@@ -297,7 +307,7 @@ class Af_Psql_Trgm extends Plugin {
 		if ($nequal != 0) {
 			$article["force_catchup"] = true;
 			return $article;
-		}
+		} */
 
 		$sth = $this->pdo->prepare("SELECT MAX(SIMILARITY(title, ?)) AS ms
 		  FROM ttrss_entries, ttrss_user_entries WHERE ref_id = id AND
@@ -309,14 +319,15 @@ class Af_Psql_Trgm extends Plugin {
 		$row = $sth->fetch();
 		$similarity_result = $row['ms'];
 
-		Debug::log("af_psql_trgm: similarity result: $similarity_result", Debug::$LOG_EXTENDED);
+		Debug::log("af_psql_trgm: similarity result for $title_escaped: $similarity_result", Debug::$LOG_EXTENDED);
 
 		if ($similarity_result >= $similarity) {
+			Debug::log("af_psql_trgm: marking article as read ($similarity_result >= $similarity)", Debug::$LOG_EXTENDED);
+
 			$article["force_catchup"] = true;
 		}
 
 		return $article;
-
 	}
 
 	function api_version() {
@@ -338,5 +349,14 @@ class Af_Psql_Trgm extends Plugin {
 
 		return $tmp;
 	}
+
+	private function get_stored_array($name) {
+		$tmp = $this->host->get($this, $name);
+
+		if (!is_array($tmp)) $tmp = [];
+
+		return $tmp;
+	}
+
 
 }

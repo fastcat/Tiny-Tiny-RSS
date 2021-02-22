@@ -2,21 +2,6 @@
 	set_include_path(dirname(__FILE__) ."/include" . PATH_SEPARATOR .
 		get_include_path());
 
-	/* remove ill effects of magic quotes */
-
-	if (get_magic_quotes_gpc()) {
-		function stripslashes_deep($value) {
-			$value = is_array($value) ?
-				array_map('stripslashes_deep', $value) : stripslashes($value);
-				return $value;
-		}
-
-		$_POST = array_map('stripslashes_deep', $_POST);
-		$_GET = array_map('stripslashes_deep', $_GET);
-		$_COOKIE = array_map('stripslashes_deep', $_COOKIE);
-		$_REQUEST = array_map('stripslashes_deep', $_REQUEST);
-	}
-
 	require_once "autoload.php";
 	require_once "sessions.php";
 	require_once "functions.php";
@@ -47,7 +32,14 @@
 
 	if (implements_interface($handler, "IHandler") && $handler->before($method)) {
 		if ($method && method_exists($handler, $method)) {
-			$handler->$method();
+			$reflection = new ReflectionMethod($handler, $method);
+
+			if ($reflection->getNumberOfRequiredParameters() == 0) {
+				$handler->$method();
+			} else {
+				header("Content-Type: text/json");
+				print error_json(6);
+			}
 		} else if (method_exists($handler, 'index')) {
 			$handler->index();
 		}

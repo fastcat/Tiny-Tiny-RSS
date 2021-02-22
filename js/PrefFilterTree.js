@@ -1,4 +1,5 @@
-/* global dijit,lib */
+/* global __, $$, define, lib, dijit, dojo, xhrPost, Notify, Filters, Lists */
+
 define(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], function (declare, domConstruct) {
 
 	return declare("fox.PrefFilterTree", lib.CheckBoxTree, {
@@ -149,9 +150,7 @@ define(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functio
 				style: "width: 600px",
 
 				test: function () {
-					const query = "backend.php?" + dojo.formToQuery("filter_edit_form") + "&savemode=test";
-
-					Filters.editFilterTest(query);
+					Filters.editFilterTest(dojo.formToObject("filter_edit_form"));
 				},
 				selectRules: function (select) {
 					Lists.select("filterDlg_Matches", select);
@@ -238,9 +237,6 @@ define(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree"], functio
 
 			return false;
 		},
-
-
-
 });
 });
 
